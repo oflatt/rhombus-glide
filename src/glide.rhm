@@ -25,6 +25,9 @@ fun replace_const(stx, newnum):
   | _: stx
 
 
+let screenW = 800
+let screenH = 800
+
 class Button(xpos, ypos, width, height):
   method draw(dc, inputState):
     let screenx = xpos * dc.height
@@ -32,11 +35,19 @@ class Button(xpos, ypos, width, height):
     let screenw = width * dc.height
     let screenh = height * dc.height
     let color:
-      if inputState.mouseX > screenx && inputState.mouseY > screeny && inputState.mouseX < screenx+screenw && inputState.mouseY < screeny+screenh:
+      if this.isCursorIn(inputState)
       | "gray"
       | "white"
 
     rectangle(~width: width*dc.height, ~height: height*dc.height, ~fill: color, ~line: "black", ~line_width: 3).pad(~left: screenx, ~right: screeny).draw(dc)
+
+  method isCursorIn(inputState):
+    let screenx = xpos * screenH
+    let screeny = ypos * screenH
+    let screenw = width * screenH
+    let screenh = height * screenH
+    inputState.mouseX > screenx && inputState.mouseY > screeny && inputState.mouseX < screenx+screenw && inputState.mouseY < screeny+screenh  
+    
 
 class InputState(mouseX, mouseY)
 
@@ -48,7 +59,12 @@ class UI(buttons):
 // code is the current code for the body of the function
 class Glide(inputState, code, ui):
   method onmouse(ev):
-    this with (inputState = (this.inputState with (mouseX = ev.x, mouseY = ev.y)))
+    let with_input = this with (inputState = (this.inputState with (mouseX = ev.x, mouseY = ev.y)))
+    if ui.buttons[0].isCursorIn(with_input.inputState) && ev.kind == gui.MouseEvent.Kind.left_down:
+    | println("clicked")
+    | #false
+    with_input
+
 
 
 fun draw(dc, data):
@@ -65,7 +81,7 @@ fun edit_slide(stx):
   let state = gui.Obs(Glide(InputState(0, 0), stx, ui))
   
 
-  let win = gui.Window(gui.Canvas(state, draw, ~mouse: onmousefor(state)), ~size: [800, 800])
+  let win = gui.Window(gui.Canvas(state, draw, ~mouse: onmousefor(state)), ~size: [screenW, screenH])
   gui.render(win)
 
 
