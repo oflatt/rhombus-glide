@@ -71,10 +71,16 @@ class Glide(inputState, code, old_code, ui, file_path):
 
 
 fun dosave(glide):
-  let srcloc = glide.old_code.srcloc
-  println(glide.file_path)
-
-  #false
+  let srcloc = glide.old_code.srcloc()
+  println(srcloc)
+  let source = filesystem.read_string(srcloc.source)
+  let before = String.substring(source, 0, srcloc.position)
+  let after:
+    if srcloc.position + srcloc.span >= String.length(source)
+    | ""
+    | String.substring(source, srcloc.position + srcloc.span, String.length(source))
+  let new_source = before +& glide.code +& after
+  println(new_source)
 
 fun draw(dc, data):
   eval(data.code).draw(dc)
