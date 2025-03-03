@@ -14,6 +14,8 @@ import:
     ~>
     <~
 
+export:
+  glide
 
 
 
@@ -58,7 +60,7 @@ class UI(buttons):
       button.draw(dx, inputState)
 
 // code is the current code for the body of the function
-class Glide(inputState, code, old_code, ui, file_path):
+class Glide(inputState, code, old_code, ui):
   method onmouse(ev):
     let with_input = this with (inputState = (this.inputState with (mouseX = ev.x, mouseY = ev.y)))
     with_input
@@ -119,5 +121,3 @@ meta:
 expr.macro 'glide $name(): $(body :: Multi)':
   glide(body)
 
-glide tworectangles():
-  beside(~sep: 100, rectangle(), rectangle())

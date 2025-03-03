@@ -1,0 +1,8 @@
+#lang rhombus
+
+import:
+  "glide.rhm" open
+  pict open
+
+glide tworectangles():
+  beside(~sep: 100, rectangle(), rectangle())
