@@ -1,0 +1,125 @@
+#lang rhombus
+
+
+import:
+  rhombus/meta open
+  pict open
+  pict/text open
+  pict/rhombus open
+  rhombus/measure
+  rhombus/fixnum expose:
+    - as fm
+
+
+meta:
+  fun glide(syntax):
+    '«'$(syntax)'»'
+
+
+expr.macro 'glide: $(body :: Multi)':
+  glide(body)
+
+let stx:
+  glide:
+    beside(
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),
+      rectangle(),
+      rectangle(~width: 10, ~height: 20),)
+
+let samples = 500
+
+
+fun replace_const(stx, newnum):
+  match stx:
+  | '$name ($arg, ...)':
+      '$name ($(replace_const(arg, newnum)), ...)'
+  | '~width: $num':
+      '~width: $newnum'
+  | _: stx
+
+
+fun measure():
+  let before = measure.cpu_milliseconds()
+
+  for (i in 0..samples):
+    eval(replace_const(stx, i))
+
+  let after = measure.cpu_milliseconds()
+
+  let diff = after fm before
+  let seconds = diff / 1000.0
+  let samples_per_sec = samples / seconds
+  samples_per_sec
+
+eval(replace_const(stx, 100))
+
+measure()
