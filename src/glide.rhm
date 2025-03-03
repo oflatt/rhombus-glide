@@ -7,6 +7,7 @@ import:
   pict/text open
   pict/rhombus open
   rhombus/measure
+  rhombus/runtime_path
   rhombus/fixnum expose:
     - as fm
   gui expose:
@@ -57,23 +58,30 @@ class UI(buttons):
       button.draw(dx, inputState)
 
 // code is the current code for the body of the function
-class Glide(inputState, code, oldCode, ui):
+class Glide(inputState, code, old_code, ui, file_path):
   method onmouse(ev):
     let with_input = this with (inputState = (this.inputState with (mouseX = ev.x, mouseY = ev.y)))
     with_input
 
   method onkey(ev):
     if ev.code == Char"s" && gui.KeyEvent.Down.control in ev.downs:
-    | println("s")
+    | dosave(this)
     | "other"
     this
+
+
+fun dosave(glide):
+  let srcloc = glide.old_code.srcloc
+  println(glide.file_path)
+
+  #false
 
 fun draw(dc, data):
   eval(data.code).draw(dc)
   data.ui.draw(dc, data.inputState)
 
-  // if we need to save because data.code is different from data.oldCode, draw save icon
-  if data.code != data.oldCode:
+  // if we need to save because data.code is different from data.old_code, draw save icon
+  if data.code != data.old_code:
   | let savePict = rectangle(~width: 50, ~height: 50, ~fill: "gray", ~line: "black", ~line_width: 3).pad(~left: 750, ~top: 750)
     savePict.draw(dc)
   | #false
@@ -89,9 +97,9 @@ fun onkeyfor(state):
     state <~ fun (old): old.onkey(ev)
   onkey
 
-fun edit_slide(stx):
+fun edit_slide(stx, path_name):
   let ui = UI([])
-  let state = gui.Obs(Glide(InputState(0, 0), stx, stx, ui))
+  let state = gui.Obs(Glide(InputState(0, 0), stx, stx, ui, path_name))
   
 
   let win = gui.Window(gui.Canvas(state, draw, ~mouse: onmousefor(state), ~key: onkeyfor(state)), ~size: [screenW, screenH])
@@ -99,12 +107,15 @@ fun edit_slide(stx):
 
 
 meta:
-  fun glide(syntax):
-    '«edit_slide('$(syntax)')»'
+  fun glide(syntax, path):
+    '«edit_slide('$(syntax)', $path)»'
 
+expr.macro 'glide $path $name(): $(body :: Multi)':
+  glide(body, path)
 
-expr.macro 'glide $name(): $(body :: Multi)':
-  glide(body)
+runtime_path.def my_path:
+  "glide.rhm" // TODO this should be the name of the current file, how to do this?
+      
 
-glide tworectangles():
+glide my_path tworectangles():
   beside(~sep: 100, rectangle(), rectangle())
