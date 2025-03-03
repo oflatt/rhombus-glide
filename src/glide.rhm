@@ -25,25 +25,48 @@ fun replace_const(stx, newnum):
   | _: stx
 
 
+class Button(xpos, ypos, width, height):
+  method draw(dc, inputState):
+    let screenx = xpos * dc.height
+    let screeny = ypos * dc.height
+    let screenw = width * dc.height
+    let screenh = height * dc.height
+    let color:
+      if inputState.mouseX > screenx && inputState.mouseY > screeny && inputState.mouseX < screenx+screenw && inputState.mouseY < screeny+screenh:
+      | "gray"
+      | "white"
+
+    rectangle(~width: width*dc.height, ~height: height*dc.height, ~fill: color, ~line: "black", ~line_width: 3).pad(~left: screenx, ~right: screeny).draw(dc)
+
+class InputState(mouseX, mouseY)
+
+class UI(buttons):
+  method draw(dx, inputState):
+    for (button in buttons):
+      button.draw(dx, inputState)
+
 // code is the current code for the body of the function
-class Glide(mouseX, mouseY, code)
+class Glide(inputState, code, ui):
+  method onmouse(ev):
+    this with (inputState = (this.inputState with (mouseX = ev.x, mouseY = ev.y)))
 
 
 fun draw(dc, data):
   eval(data.code).draw(dc)
+  data.ui.draw(dc, data.inputState)
 
 fun onmousefor(state):
   fun onmouse(ev :: gui.MouseEvent, area):
-    state <~ fun (old): old with (mouseX = ev.x, mouseY = ev.y)
+    state <~ fun (old): old.onmouse(ev)
   onmouse
 
 fun edit_slide(stx):
-  let state = gui.Obs(Glide(0, 0, stx))
+  let ui = UI([Button(0, 0, 0.1, 0.1)])
+  let state = gui.Obs(Glide(InputState(0, 0), stx, ui))
+  
 
   let win = gui.Window(gui.Canvas(state, draw, ~mouse: onmousefor(state)), ~size: [800, 800])
   gui.render(win)
-
-
 
 
 meta:
@@ -55,4 +78,4 @@ expr.macro 'glide $name(): $(body :: Multi)':
   glide(body)
 
 glide tworectangles():
-  beside(~sep: 10, rectangle(), rectangle())
+  beside(~sep: 100, rectangle(), rectangle())
