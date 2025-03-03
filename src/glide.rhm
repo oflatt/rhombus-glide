@@ -9,93 +9,11 @@ import:
   rhombus/measure
   rhombus/fixnum expose:
     - as fm
+  gui expose:
+    ~>
+    <~
 
 
-meta:
-  fun glide(syntax):
-    '«'$(syntax)'»'
-
-
-expr.macro 'glide: $(body :: Multi)':
-  glide(body)
-
-let stx:
-  glide:
-    beside(
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),
-      rectangle(),
-      rectangle(~width: 10, ~height: 20),)
-
-let samples = 500
 
 
 fun replace_const(stx, newnum):
@@ -107,19 +25,34 @@ fun replace_const(stx, newnum):
   | _: stx
 
 
-fun measure():
-  let before = measure.cpu_milliseconds()
+// code is the current code for the body of the function
+class Glide(mouseX, mouseY, code)
 
-  for (i in 0..samples):
-    eval(replace_const(stx, i))
 
-  let after = measure.cpu_milliseconds()
+fun draw(dc, data):
+  eval(data.code).draw(dc)
 
-  let diff = after fm before
-  let seconds = diff / 1000.0
-  let samples_per_sec = samples / seconds
-  samples_per_sec
+fun onmousefor(state):
+  fun onmouse(ev :: gui.MouseEvent, area):
+    state <~ fun (old): old with (mouseX = ev.x, mouseY = ev.y)
+  onmouse
 
-eval(replace_const(stx, 100))
+fun edit_slide(stx):
+  let state = gui.Obs(Glide(0, 0, stx))
 
-measure()
+  let win = gui.Window(gui.Canvas(state, draw, ~mouse: onmousefor(state)), ~size: [800, 800])
+  gui.render(win)
+
+
+
+
+meta:
+  fun glide(syntax):
+    '«edit_slide('$(syntax)')»'
+
+
+expr.macro 'glide $name(): $(body :: Multi)':
+  glide(body)
+
+glide tworectangles():
+  beside(~sep: 10, rectangle(), rectangle())
