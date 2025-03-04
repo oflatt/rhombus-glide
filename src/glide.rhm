@@ -13,6 +13,7 @@ import:
   gui expose:
     ~>
     <~
+  "traverse_rhombus.rhm" open
 
 export:
   glide
@@ -60,36 +61,40 @@ class Button(xpos, ypos, width, height):
 class InputState(mouseX, mouseY)
 
 class UI(selected):
-  constructor
-  | ():
-      super(#false)
-
-  method draw(dx, inputState):
-    #false
+  method draw(dx, inputState, current_frame):
+    if this.selected:
+    | block:
+        let selected_pict = find_pict_from_gpi(current_frame, this.selected)
+        let (x, y) = Find(selected_pict, ~horiz: #'left, ~vert: #'top).in(current_frame)
+        let width = selected_pict.width
+        let height = selected_pict.height
+        rectangle(~width: width, ~height: height, ~fill: #false, ~line: "blue", ~line_width: 4).pad(~left: x, ~top: y).draw(dx)
+    | #false
 
 // code is the current code for the body of the function
-class Glide(inputState, code, old_code, ui, current_name, current_frame):
+class Glide(inputState, code, old_code, ui, current_name):
+  method current_frame():
+    eval('block:
+            $(this.code)
+            $(this.current_name)()')
+
   method onmouse(ev):
+    let current:
+      this.current_frame()
+  
     let with_input = this with (inputState = (this.inputState with (mouseX = ev.x, mouseY = ev.y)))
 
     let with_selected:
       if ev.kind == gui.MouseEvent.Kind.left_down:
       | block:
           let new_selected:
-            find_clicked_pict(this.current_frame, ev, this.ui.selected)
-          with_input with (ui = (with_input.ui with (selected = new_selected.metadata()["GlidePictIdentity"])))
+            find_clicked_pict(current, ev, this.ui.selected)
+          if new_selected:
+          | with_input with (ui = (with_input.ui with (selected = new_selected.metadata()["GlidePictIdentity"])))
+          | with_input with (ui = (with_input.ui with (selected = #false)))
       | with_input
     
-    println(with_selected.ui.selected)
-
-    let next_frame:
-      eval('block:
-              $(with_selected.code)
-              $(with_selected.current_name)()')
-    let with_current_frame:
-      this with (current_frame = next_frame)
-    
-    with_current_frame
+    with_selected
 
   method onkey(ev):
     if ev.code == Char"s" && gui.KeyEvent.Down.control in ev.downs:
@@ -113,16 +118,21 @@ fun dosave(glide):
   println(new_source)
 
 
-// draw a glide state to the dc
-fun draw(dc, glide):
-  glide.current_frame.draw(dc)
-  glide.ui.draw(dc, glide.inputState)
 
-  // if we need to save because data.code is different from data.old_code, draw save icon
-  if glide.code != glide.old_code:
-  | let savePict = rectangle(~width: 50, ~height: 50, ~fill: "gray", ~line: "black", ~line_width: 3).pad(~left: 750, ~top: 750)
-    savePict.draw(dc)
-  | #false
+fun draw_for(state):
+  // draw a glide state to the dc
+  fun draw(dc, glide):
+    let current_frame = glide.current_frame()
+    current_frame.draw(dc)
+    glide.ui.draw(dc, glide.inputState, current_frame)
+
+    // if we need to save because data.code is different from data.old_code, draw save icon
+    if glide.code != glide.old_code:
+    | let savePict = rectangle(~width: 50, ~height: 50, ~fill: "gray", ~line: "black", ~line_width: 3).pad(~left: 750, ~top: 750)
+      savePict.draw(dc)
+    | #false
+  draw
+  
 
 
 fun onmousefor(state):
@@ -163,30 +173,21 @@ fun find_func(stx, name):
      func)[0]
 
 fun edit_slide(stx):
-  let ui = UI()
+  let ui = UI(#false)
   let with_ids = add_pict_identities(stx)
-  let state = gui.Obs(Glide(InputState(0, 0), with_ids, with_ids, ui, find_last_func(stx), nothing))
+  println("with_ids: " +& with_ids.to_source_string())
+  let state = gui.Obs(Glide(InputState(0, 0), with_ids, with_ids, ui, find_last_func(stx)))
   
 
-  let win = gui.Window(gui.Canvas(state, draw, ~mouse: onmousefor(state), ~key: onkeyfor(state)), ~size: [screenW, screenH])
+  let win = gui.Window(gui.Canvas(state, draw_for(state), ~mouse: onmousefor(state), ~key: onkeyfor(state)), ~size: [screenW, screenH])
   gui.render(win)
 
 
-fun traverse_syntax(stx, f):
-  match stx:
-  | 'fun $name($args, ...):
-      $body
-     ...':
-      'fun $name($args, ...):
-        $(f(body))
-       ...'
-  | '$call($args, ...)':
-      f('$call($(traverse_syntax(args, f)), ...)')
 
 fun is_glide_call(stx):
   match stx:
   | '$name($args, ...)':
-      eval('"$name" == "tworectangles"')
+      name.to_source_string() == "rectangle"
   | _: #false
 
 
@@ -194,35 +195,32 @@ fun is_glide_call(stx):
 // it wraps it in a GPI__ call with a fresh number
 fun add_pict_identities(stx):
   def mutable current_id = 0
-
-  [traverse_syntax(stx,
-                   fun (stx):
-                     if is_glide_call:
-                     | block:
+  traverse_syntax(stx,
+                  fun (stx):
+                    if is_glide_call(stx):
+                    | block:
                         let current = current_id
                         current_id := current_id + 1
                         Syntax.relocate_group(
                           'GPI__($stx, $current_id)',
                           stx)
-                     | stx),
-   current_id]
+                    | stx)
 
 fun find_pict_from_gpi(pict, n):
-  if pict.metadata()["GlidePictIdentity"] == n
+  if pict.metadata().get("GlidePictIdentity", #false) == n
   | pict
   | block:
       (for any: 
-        each child in pict.children()
+        each child in pict.children
         find_pict_from_gpi(child, n))
 
 fun is_pict_clicked(overallpict, pict, ev):
-  if pict.metadata()["GlidePictIdentity"]:
+  if pict.metadata().get("GlidePictIdentity", #false):
   | block:
-      let found = overallpict.find(pict)
-      let x = found.left
-      let y = found.top
+      let (x, y) = Find(pict, ~horiz: #'left, ~vert: #'top).in(overallpict)
       let width = pict.width
       let height = pict.height
+      println("x: " +& x +& " y: " +& y +& " width: " +& width +& " height: " +& height +& " ev.x: " +& ev.x +& " ev.y: " +& ev.y)
       ev.x > x && ev.x < x + width && ev.y > y && ev.y < y + height
   | #false
 
@@ -233,8 +231,8 @@ fun find_clicked_pict(pict, clickev, current_selected):
   | block:
       let selected = find_pict_from_gpi(pict, current_selected)
       if is_pict_clicked(pict, selected, clickev)
-      | if pict.children().length > 0:
-        | find_first_clicked_pict(pict, pict.children(), clickev)
+      | if pict.children.length() > 0:
+        | find_first_clicked_pict(pict, pict.children, clickev)
         | find_first_clicked_pict(pict, [pict], clickev)
       | find_first_clicked_pict(pict, [pict], clickev)
   | find_first_clicked_pict(pict, [pict], clickev)
@@ -243,8 +241,9 @@ fun find_first_clicked_pict(overall_pict, pict_children, click):
   for any:
     each child in pict_children
     if is_pict_clicked(overall_pict, child, click)
-    | child
-    | find_first_clicked_pict(overall_pict, child.children(), click)
+    | block:
+        child
+    | find_first_clicked_pict(overall_pict, child.children, click)
 
 // adds a keyword argument to a function call with the given value
 // or modifies the value if the keyword is already present

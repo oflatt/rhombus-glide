@@ -1,0 +1,24 @@
+#lang rhombus
+
+
+import:
+  rhombus/meta open
+
+export:
+  traverse_syntax
+
+fun traverse_syntax(stx, f):
+  match stx:
+  | 'fun $name($args, ...):
+      $body
+     ...':
+      Syntax.relocate_group(
+        'fun $name($args, ...):
+          $(f(body))
+         ...',
+        stx)
+  | '$call($args, ...)':
+      f('$call($(traverse_syntax(args, f)), ...)')
+  | _: block:
+         println("traverse_syntax: " +& stx.to_source_string())
+         stx
