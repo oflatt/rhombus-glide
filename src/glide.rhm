@@ -18,6 +18,11 @@ export:
   glide
 
 
+// Adds a Glide Pict Identity to a pict
+// This gives a reference to it for selection. Used internally 
+// by the Glide editor and removed before saving back to the source file.
+fun GPI__(pict, n):
+  pict.set_metadata({ "GlidePictIdentity": n })
 
 fun replace_const(stx, newnum):
   match stx:
@@ -54,10 +59,13 @@ class Button(xpos, ypos, width, height):
 
 class InputState(mouseX, mouseY)
 
-class UI(buttons):
+class UI(selected):
+  constructor
+  | ():
+      super(#false)
+
   method draw(dx, inputState):
-    for (button in buttons):
-      button.draw(dx, inputState)
+    #false
 
 // code is the current code for the body of the function
 class Glide(inputState, code, old_code, ui, current_name):
@@ -73,7 +81,6 @@ class Glide(inputState, code, old_code, ui, current_name):
   
   method current_func():
     find_func(this.code, this.current_name)
-
 
 fun dosave(glide):
   let srcloc = glide.old_code.srcloc()
@@ -139,13 +146,84 @@ fun find_func(stx, name):
      func)[0]
 
 fun edit_slide(stx):
-  let ui = UI([])
+  let ui = UI()
   let state = gui.Obs(Glide(InputState(0, 0), stx, stx, ui, find_last_func(stx)))
   
 
   let win = gui.Window(gui.Canvas(state, draw, ~mouse: onmousefor(state), ~key: onkeyfor(state)), ~size: [screenW, screenH])
   gui.render(win)
 
+
+fun traverse_syntax(stx, f):
+  match stx:
+  | 'fun $name($args, ...):
+      $body
+     ...':
+      'fun $name($args, ...):
+        $(f(body))
+       ...'
+  | '$call($args, ...)':
+      f('$call($(traverse_syntax(args, f)), ...)')
+
+fun is_glide_call(stx):
+  match stx:
+  | '$name($args, ...)':
+      eval('"$name" == "tworectangles"')
+  | _: #false
+
+
+// returns stx, but whereever it finds a glide call,
+// it wraps it in a GPI__ call with a fresh number
+fun add_pict_identities(stx):
+  def mutable current_id = 0
+
+  [traverse_syntax(stx,
+                   fun (stx):
+                     if is_glide_call:
+                     | block:
+                        let current = current_id
+                        current_id := current_id + 1
+                        'GPI__($stx, $current_id)'
+                     | stx),
+   current_id]
+
+fun find_pict_from_gpi(pict, n):
+  if pict.metadata()["GlidePictIdentity"] == n
+  | pict
+  | block:
+      (for any: 
+        each child in pict.children()
+        find_pict_from_gpi(child, n))
+
+// adds a keyword argument to a function call with the given value
+// or modifies the value if the keyword is already present
+fun modify_keyword_val_of(stx, keyword, new_val):
+  match stx:
+  | '$name($args, ...)':
+      def mutable found = #false
+      let new_args = (for List:
+                        each arg in [args, ...]
+                        match arg:
+                        | '~$key: $val':
+                            if key == keyword
+                            | block:
+                                found := #true
+                                '~$key: $new_val'
+                            | arg
+                        | _: arg)
+      '$name($(new_args), ...)'
+
+// finds the pict source code with the given GPI number,
+// replacing the keyword value with new_val
+fun modify_keyword_val(stx, gpin, keyword, new_val):
+  traverse_syntax(stx,
+                  fun (stx):
+                    match stx:
+                    | 'GPI__($pict, $n)':
+                        if n == gpin
+                        | modify_keyword_val_of(stx, new_val)
+                        | stx
+                    | _: stx)
 
 meta:
   fun glide(syntax):
