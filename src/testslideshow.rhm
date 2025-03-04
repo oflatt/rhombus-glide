@@ -10,4 +10,4 @@ glide:
     beside(~sep: 100, rectangle(), rectangle())
 
   fun main():
-    tworectangles(~width: 100)
+    beside(~sep: 100, rectangle(~width: 100), rectangle())
