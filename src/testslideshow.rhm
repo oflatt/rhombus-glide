@@ -7,4 +7,4 @@ import:
 
 glide:
   fun main():
-    rectangle(~width: 100)
+    beside(~sep: 100, rectangle(~width: 100), rectangle())

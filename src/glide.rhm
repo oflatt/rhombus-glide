@@ -100,7 +100,10 @@ class Glide(inputState, code, old_code, ui, current_name):
     if ev.code == Char"s" && gui.KeyEvent.Down.control in ev.downs:
     | dosave(this)
     | "other"
-    this
+
+    if gui.KeyEvent.Key.escape == ev.code:
+    | this with (ui = (this.ui with (selected = #false)))
+    | this
   
   method current_func():
     find_func(this.code, this.current_name)
@@ -187,7 +190,7 @@ fun edit_slide(stx):
 fun is_glide_call(stx):
   match stx:
   | '$name($args, ...)':
-      name.to_source_string() == "rectangle"
+      name.to_source_string() == "rectangle" || name.to_source_string() == "beside"
   | _: #false
 
 
@@ -197,12 +200,13 @@ fun add_pict_identities(stx):
   def mutable current_id = 0
   traverse_syntax(stx,
                   fun (stx):
+                    println("transforming: " +& stx.to_source_string())
                     if is_glide_call(stx):
                     | block:
                         let current = current_id
                         current_id := current_id + 1
                         Syntax.relocate_group(
-                          'GPI__($stx, $current_id)',
+                          'GPI__($stx, $current)',
                           stx)
                     | stx)
 

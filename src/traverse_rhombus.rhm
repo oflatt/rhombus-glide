@@ -14,7 +14,7 @@ fun traverse_syntax(stx, f):
      ...':
       Syntax.relocate_group(
         'fun $name($args, ...):
-          $(f(body))
+          $(traverse_syntax(body, f))
          ...',
         stx)
   | '$call($args, ...)':
