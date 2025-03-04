@@ -4,5 +4,10 @@ import:
   "glide.rhm" open
   pict open
 
-glide tworectangles():
-  beside(~sep: 100, rectangle(), rectangle())
+
+glide:
+  fun tworectangles(~width: width = 100):
+    beside(~sep: 100, rectangle(), rectangle())
+
+  fun main():
+    tworectangles(~width: 100)
