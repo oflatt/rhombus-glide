@@ -58,7 +58,7 @@ class Button(xpos, ypos, width, height):
     inputState.mouseX > screenx && inputState.mouseY > screeny && inputState.mouseX < screenx+screenw && inputState.mouseY < screeny+screenh  
     
 
-class InputState(mouseX, mouseY)
+class InputState(downMouseX, downMouseY)
 
 class UI(selected):
   method draw(dx, inputState, current_frame):
@@ -70,6 +70,9 @@ class UI(selected):
         let height = selected_pict.height
         rectangle(~width: width, ~height: height, ~fill: #false, ~line: "blue", ~line_width: 4).pad(~left: x, ~top: y).draw(dx)
     | #false
+
+fun distance(x1, y1, x2, y2):
+  math.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2))
 
 // inputState is an InputState object
 // code is the current code for the body of the function
@@ -86,17 +89,22 @@ class Glide(inputState, code, old_code, ui, current_name):
     let current:
       this.current_frame()
   
-    let with_input = this with (inputState = (this.inputState with (mouseX = ev.x, mouseY = ev.y)))
+    let with_input:
+      if ev.kind == gui.MouseEvent.Kind.left_down:
+      | this with (inputState = (this.inputState with (downMouseX = ev.x, downMouseY = ev.y)))
+      | this
 
     let with_selected:
-      if ev.kind == gui.MouseEvent.Kind.left_down:
-      | block:
+      cond 
+      | ev.kind == gui.MouseEvent.Kind.left_up && distance(this.inputState.downMouseX, this.inputState.downMouseY, ev.x, ev.y) < 10:
           let new_selected:
             find_clicked_pict(current, ev, this.ui.selected)
           if new_selected:
           | with_input with (ui = (with_input.ui with (selected = new_selected.metadata()["GlidePictIdentity"])))
           | with_input with (ui = (with_input.ui with (selected = #false)))
-      | with_input
+      | ev.kind == gui.MouseEvent.Kind.left_up:
+          with_input with (code = add_padding_to(this.code, this.ui.selected, ev.x - this.inputState.downMouseX, ev.y - this.inputState.downMouseY))
+      | ~else: with_input
     
     with_selected
 
@@ -293,8 +301,9 @@ fun apply_to_gpi(stx, gpin, f):
                   fun (stx):
                     match stx:
                     | 'GPI__($pict, $n)':
-                        if n == gpin
-                        | f(pict)
+                        println("applying to gpi: " +& n)
+                        if eval(n) == gpin
+                        | f(stx)
                         | stx
                     | _: stx)
 
@@ -309,6 +318,19 @@ fun add_to_keyword_val(stx, gpin, keyword, val_to_add):
   apply_to_gpi(stx, gpin,
                fun (pict):
                  add_to_keyword_val_of(pict, keyword, val_to_add))
+
+fun add_padding_to(stx, gpin, dx, dy):
+  let padding_left_pos = math.max(dx, 0)
+  let padding_top_pos = math.max(dy, 0)
+  println("before")
+  println(stx.to_source_string())
+  let res:
+    apply_to_gpi(stx, gpin,
+                 fun (pict):
+                  println("adding")
+                  '($pict).pad(~left: $padding_left_pos, ~top: $padding_top_pos)')
+  println(res.to_source_string())
+  res
 
 meta:
   fun glide(syntax):

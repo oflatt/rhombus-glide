@@ -19,6 +19,10 @@ fun traverse_syntax(stx, f):
         stx)
   | '$call($args, ...)':
       f('$call($(traverse_syntax(args, f)), ...)')
+  | '$something.$something_else($args, ...)':
+      f('$something.$something_else($(traverse_syntax(args, f)), ...)')
+  | '($something)':
+      '($traverse_syntax(something, f))'
   | _: block:
          println("traverse_syntax: " +& stx.to_source_string())
          stx
