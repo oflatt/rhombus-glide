@@ -26,16 +26,14 @@ fun set_height(pict, height):
   let current_height = pict.height
   pict.pad(~bottom: height - current_height)
 
-fun gpad(pict, left, top):
+fun pad(pict, left, top):
   let width_before = pict.width
   let height_before = pict.height
   let res = pict.pad(~left: left, ~top: top)
   let width_after = res.width
   let height_after = res.height
   set_height(set_width(res, width_before), height_before)
-
-
-
+  res
 
 // Adds a Glide Pict Identity to a pict
 // This gives a reference to it for selection. Used internally 
@@ -250,7 +248,6 @@ fun add_pict_identities(stx):
   def mutable current_id = 0
   traverse_group(stx,
                  fun (stx):
-                   println("transforming: " +& stx.to_source_string())
                    if is_glide_call(stx):
                    | block:
                        let current = current_id
@@ -282,6 +279,7 @@ fun is_pict_clicked(overallpict, pict, ev):
       let (x, y) = Find(pict, ~horiz: #'left, ~vert: #'top).in(overallpict)
       let width = pict.width
       let height = pict.height
+      println("identity: " +& pict.metadata().get("GlidePictIdentity", #false))
       println("x: " +& x +& " y: " +& y +& " width: " +& width +& " height: " +& height +& " ev.x: " +& ev.x +& " ev.y: " +& ev.y)
       ev.x > x && ev.x < x + width && ev.y > y && ev.y < y + height
   | #false
@@ -289,15 +287,14 @@ fun is_pict_clicked(overallpict, pict, ev):
 // recursively find a pict that was clicked, picking
 // a child if something is already selected
 fun find_clicked_pict(pict, clickev, current_selected):
+  println("pict: " +& pict)
   if current_selected:
   | block:
       let selected = find_pict_from_gpi(pict, current_selected)
       if is_pict_clicked(pict, selected, clickev)
       | block:
-          println("children of")
-          println(pict.children.length())
-          if pict.children.length() > 0:
-          | find_first_clicked_pict(pict, pict.children, clickev)
+          if selected.children.length() > 0:
+          | find_first_clicked_pict(pict, selected.children, clickev)
           | find_first_clicked_pict(pict, [pict], clickev)
       | find_first_clicked_pict(pict, [pict], clickev)
   | find_first_clicked_pict(pict, [pict], clickev)
@@ -307,6 +304,7 @@ fun find_first_clicked_pict(overall_pict, pict_children, click):
     each child in pict_children
     if is_pict_clicked(overall_pict, child, click)
     | block:
+        println("found clicked pict")
         child
     | find_first_clicked_pict(overall_pict, child.children, click)
 
@@ -374,7 +372,7 @@ fun add_padding_to(stx, gpin, dx, dy):
   let res:
     apply_to_gpi(stx, gpin,
                  fun (pict):
-                  'gpad($pict, $padding_left_pos, $padding_top_pos)')
+                  'pad($pict, $padding_left_pos, $padding_top_pos)')
   res
 
 meta:
