@@ -8,3 +8,4 @@ import:
 glide:
   fun main():
     beside(~sep: 100, rectangle(~width: 100), rectangle())
+2

@@ -120,16 +120,33 @@ class Glide(inputState, code, old_code, ui, current_name):
   method current_func():
     find_func(this.code, this.current_name)
 
+fun repeat_str(str, amt):
+  def mutable res = ""
+  for (i in 0..amt):
+    res := res +& str
+  res
+
+fun indent(code, amt):
+  let lines = String.split(code, "\n")
+  let indented = (for List:
+                    each line in lines
+                    repeat_str(" ", amt) +& line)
+  String.join(indented, "\n")
+
 fun dosave(glide):
   let srcloc = glide.old_code.srcloc()
   
   let source = filesystem.read_string(srcloc.source)
-  let before = String.substring(source, 0, srcloc.position)
+  let before = String.substring(source, 0, srcloc.position-3)
   let after:
     if srcloc.position + srcloc.span >= String.length(source)
     | ""
-    | String.substring(source, srcloc.position + srcloc.span, String.length(source))
-  let new_source = before +& glide.code +& after
+    | String.substring(source, srcloc.position + srcloc.span-1, String.length(source))
+
+  let identities_removed = remove_pict_identities(glide.code)
+  let new_middle = indent(identities_removed.to_source_string(), 2)
+
+  let new_source = before +& new_middle +& after
   
   println("saving to: " +& srcloc.source)
   filesystem.write_string(srcloc.source, new_source, ~exists: #'replace)
@@ -223,6 +240,14 @@ fun add_pict_identities(stx):
                          'GPI__($stx, $current)',
                          stx)
                    | stx)
+
+fun remove_pict_identities(stx):
+  traverse_group(stx,
+                 fun (stx):
+                   match stx:
+                   | 'GPI__($pict, $n)':
+                       pict
+                   | _: stx)
 
 fun find_pict_from_gpi(pict, n):
   if pict.metadata().get("GlidePictIdentity", #false) == n
@@ -324,14 +349,11 @@ fun add_to_keyword_val(stx, gpin, keyword, val_to_add):
 fun add_padding_to(stx, gpin, dx, dy):
   let padding_left_pos = math.max(dx, 0)
   let padding_top_pos = math.max(dy, 0)
-  println("before")
-  println(stx.to_source_string())
   let res:
     apply_to_gpi(stx, gpin,
                  fun (pict):
                   println("adding")
                   '($pict).pad(~left: $padding_left_pos, ~top: $padding_top_pos)')
-  println(res.to_source_string())
   res
 
 meta:
