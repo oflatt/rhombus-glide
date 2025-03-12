@@ -210,17 +210,17 @@ fun is_glide_call(stx):
 // it wraps it in a GPI__ call with a fresh number
 fun add_pict_identities(stx):
   def mutable current_id = 0
-  traverse_syntax(stx,
-                  fun (stx):
-                    println("transforming: " +& stx.to_source_string())
-                    if is_glide_call(stx):
-                    | block:
-                        let current = current_id
-                        current_id := current_id + 1
-                        Syntax.relocate_group(
-                          'GPI__($stx, $current)',
-                          stx)
-                    | stx)
+  traverse_group(stx,
+                 fun (stx):
+                   println("transforming: " +& stx.to_source_string())
+                   if is_glide_call(stx):
+                   | block:
+                       let current = current_id
+                       current_id := current_id + 1
+                       Syntax.relocate_group(
+                         'GPI__($stx, $current)',
+                         stx)
+                   | stx)
 
 fun find_pict_from_gpi(pict, n):
   if pict.metadata().get("GlidePictIdentity", #false) == n
@@ -297,15 +297,15 @@ fun add_to_keyword_val_of(stx, keyword, val_to_add):
   | _: error("add_to_keyword_val_of expects a function call")
 
 fun apply_to_gpi(stx, gpin, f):
-  traverse_syntax(stx,
-                  fun (stx):
-                    match stx:
-                    | 'GPI__($pict, $n)':
-                        println("applying to gpi: " +& n)
-                        if eval(n) == gpin
-                        | f(stx)
-                        | stx
-                    | _: stx)
+  traverse_group(stx,
+                 fun (stx):
+                   match stx:
+                   | 'GPI__($pict, $n)':
+                       println("applying to gpi: " +& n)
+                       if eval(n) == gpin
+                       | f(stx)
+                       | stx
+                   | _: stx)
 
 // finds the pict source code with the given GPI number,
 // replacing the keyword value with new_val
