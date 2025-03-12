@@ -339,7 +339,5 @@ meta:
     '«edit_slide('$(syntax)')»'
 
 defn.macro 'glide:
-              fun $name($args, ...):
-                $body
-              ...':
-  glide('ffun main ():« GPI__ (beside (~sep:« 100 », GPI__ (rectangle (~width:« 100 »), 0), GPI__ (rectangle (), 1)), 2) »         ...')
+              $stx':
+  glide(stx)
