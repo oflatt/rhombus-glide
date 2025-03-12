@@ -9,3 +9,6 @@ glide:
   fun main():
     beside(~sep: 100, rectangle(~width: 100), rectangle())
 2
+
+
+rectangle(~width: 100).pad(~left: -200).width

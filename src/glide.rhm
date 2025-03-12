@@ -18,6 +18,24 @@ import:
 export:
   glide
 
+fun set_width(pict, width):
+  let current_width = pict.width
+  pict.pad(~right: width - current_width)
+
+fun set_height(pict, height):
+  let current_height = pict.height
+  pict.pad(~bottom: height - current_height)
+
+fun gpad(pict, left, top):
+  let width_before = pict.width
+  let height_before = pict.height
+  let res = pict.pad(~left: left, ~top: top)
+  let width_after = res.width
+  let height_after = res.height
+  set_height(set_width(res, width_before), height_before)
+
+
+
 
 // Adds a Glide Pict Identity to a pict
 // This gives a reference to it for selection. Used internally 
@@ -82,8 +100,9 @@ fun distance(x1, y1, x2, y2):
 class Glide(inputState, code, old_code, ui, current_name):
   method current_frame():
     eval('block:
+            let slide = rectangle(~width: 800, ~height: 800, ~fill: "white")
             $(this.code)
-            $(this.current_name)()')
+            overlay(slide, $(this.current_name)(), ~horiz: #'left, ~vert: #'top)')
 
   method onmouse(ev):
     let current:
@@ -274,9 +293,12 @@ fun find_clicked_pict(pict, clickev, current_selected):
   | block:
       let selected = find_pict_from_gpi(pict, current_selected)
       if is_pict_clicked(pict, selected, clickev)
-      | if pict.children.length() > 0:
-        | find_first_clicked_pict(pict, pict.children, clickev)
-        | find_first_clicked_pict(pict, [pict], clickev)
+      | block:
+          println("children of")
+          println(pict.children.length())
+          if pict.children.length() > 0:
+          | find_first_clicked_pict(pict, pict.children, clickev)
+          | find_first_clicked_pict(pict, [pict], clickev)
       | find_first_clicked_pict(pict, [pict], clickev)
   | find_first_clicked_pict(pict, [pict], clickev)
 
@@ -347,13 +369,12 @@ fun add_to_keyword_val(stx, gpin, keyword, val_to_add):
                  add_to_keyword_val_of(pict, keyword, val_to_add))
 
 fun add_padding_to(stx, gpin, dx, dy):
-  let padding_left_pos = math.max(dx, 0)
-  let padding_top_pos = math.max(dy, 0)
+  let padding_left_pos = dx
+  let padding_top_pos = dy
   let res:
     apply_to_gpi(stx, gpin,
                  fun (pict):
-                  println("adding")
-                  '($pict).pad(~left: $padding_left_pos, ~top: $padding_top_pos)')
+                  'gpad($pict, $padding_left_pos, $padding_top_pos)')
   res
 
 meta:
