@@ -122,7 +122,7 @@ class Glide(inputState, code, old_code, ui, current_name):
 
 fun dosave(glide):
   let srcloc = glide.old_code.srcloc()
-  println(srcloc)
+  
   let source = filesystem.read_string(srcloc.source)
   let before = String.substring(source, 0, srcloc.position)
   let after:
@@ -130,7 +130,9 @@ fun dosave(glide):
     | ""
     | String.substring(source, srcloc.position + srcloc.span, String.length(source))
   let new_source = before +& glide.code +& after
-  println(new_source)
+  
+  println("saving to: " +& srcloc.source)
+  filesystem.write_string(srcloc.source, new_source, ~exists: #'replace)
 
 
 
@@ -340,6 +342,4 @@ defn.macro 'glide:
               fun $name($args, ...):
                 $body
               ...':
-  glide('fun $name($args, ...):
-            $body
-         ...')
+  glide('ffun main ():« GPI__ (beside (~sep:« 100 », GPI__ (rectangle (~width:« 100 »), 0), GPI__ (rectangle (), 1)), 2) »         ...')
