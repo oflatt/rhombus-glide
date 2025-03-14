@@ -1,0 +1,18 @@
+#lang rhombus
+
+export:
+  all_defined
+
+
+fun pad(pict, left, top):
+  pict.pad(~left: left, ~top: top)
+
+// preserve commas in pad using relocate
+fun wrap_pad(stx, x, y):
+  let orig = 'pad(a, b, c)'
+  let '$f $(parens && '($a, $b, $c)')' = orig
+  let stx2 = stx.relocate_group(a)
+  let x2 = '$x'.relocate_group(b)
+  let y2 = '$y'.relocate_group(c)
+  let parens = '($(stx2), $(x2), $(y2))'.relocate(parens)
+  '$f $parens'

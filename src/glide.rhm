@@ -14,9 +14,11 @@ import:
     ~>
     <~
   "traverse_rhombus.rhm" open
+  "wrap_stx.rhm" open
 
 export:
   glide
+  pad
 
 fun set_width(pict, width):
   let current_width = pict.width
@@ -25,15 +27,6 @@ fun set_width(pict, width):
 fun set_height(pict, height):
   let current_height = pict.height
   pict.pad(~bottom: height - current_height)
-
-fun pad(pict, left, top):
-  let width_before = pict.width
-  let height_before = pict.height
-  let res = pict.pad(~left: left, ~top: top)
-  let width_after = res.width
-  let height_after = res.height
-  set_height(set_width(res, width_before), height_before)
-  res
 
 // Adds a Glide Pict Identity to a pict
 // This gives a reference to it for selection. Used internally 
@@ -102,6 +95,7 @@ class Glide(inputState, code, old_code, ui, current_name):
             $(this.code)
             overlay(slide, $(this.current_name)(), ~horiz: #'left, ~vert: #'top)')
 
+
   method onmouse(ev):
     let current:
       this.current_frame()
@@ -127,7 +121,7 @@ class Glide(inputState, code, old_code, ui, current_name):
 
   method onkey(ev):
     if ev.code == Char"s" && gui.KeyEvent.Down.control in ev.downs:
-    | dosave(this)
+    | do_save(this)
     | "other"
 
     if gui.KeyEvent.Key.escape == ev.code:
@@ -150,7 +144,7 @@ fun indent(code, amt):
                     repeat_str(" ", amt) +& line)
   String.join(indented, "\n")
 
-fun dosave(glide):
+fun do_save(glide):
   let srcloc = glide.old_code.srcloc()
   
   let source = filesystem.read_string(srcloc.source)
@@ -372,7 +366,10 @@ fun add_padding_to(stx, gpin, dx, dy):
   let res:
     apply_to_gpi(stx, gpin,
                  fun (pict):
-                  'pad($pict, $padding_left_pos, $padding_top_pos)')
+                  wrap_pad(pict, padding_left_pos, padding_top_pos))
+  println("before: " +& stx.to_source_string())
+  println("with padding: " +& res.to_source_string())
+  println(res)
   res
 
 meta:
