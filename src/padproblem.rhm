@@ -1,0 +1,13 @@
+#lang rhombus
+
+fun pad(x, y): x
+
+let two = 2
+let with_pad:
+  let orig = 'pad(a, b)'
+  let '$f $(parens && '($a, $b)')' = orig
+  let parens:
+    '($(Syntax.make(two).relocate_group(a)), $(Syntax.make(two).relocate_group(b)))'.relocate(parens)
+  '$f $parens'
+
+eval(with_pad)

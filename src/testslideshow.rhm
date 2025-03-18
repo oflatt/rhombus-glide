@@ -5,10 +5,12 @@ import:
   pict open
 
 
-glide:
+glide { "editmode": #true }:
   fun main():
     beside(~sep: 100, rectangle(~width: 100), rectangle())
 
   fun other():
     rectangle()
+
+  [main]
 2

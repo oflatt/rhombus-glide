@@ -43,28 +43,8 @@ fun replace_const(stx, newnum):
   | _: stx
 
 
-let screenW = 800
-let screenH = 800
-
-class Button(xpos, ypos, width, height):
-  method draw(dc, inputState):
-    let screenx = xpos * dc.height
-    let screeny = ypos * dc.height
-    let screenw = width * dc.height
-    let screenh = height * dc.height
-    let color:
-      if this.isCursorIn(inputState)
-      | "gray"
-      | "white"
-
-    rectangle(~width: width*dc.height, ~height: height*dc.height, ~fill: color, ~line: "black", ~line_width: 3).pad(~left: screenx, ~right: screeny).draw(dc)
-
-  method isCursorIn(inputState):
-    let screenx = xpos * screenH
-    let screeny = ypos * screenH
-    let screenw = width * screenH
-    let screenh = height * screenH
-    inputState.mouseX > screenx && inputState.mouseY > screeny && inputState.mouseX < screenx+screenw && inputState.mouseY < screeny+screenh  
+let initialScreenW = 1100
+let initialScreenH = 800 
     
 
 class InputState(downMouseX, downMouseY)
@@ -88,7 +68,7 @@ fun distance(x1, y1, x2, y2):
 // old_code is the code that we loaded in from the file
 // ui is a UI object
 // current_name is the name of the function being edited 
-class Glide(inputState, code, old_code, ui, current_name):
+class Glide(inputState, code, old_code, ui, current_name, config, config_original_stx):
   method current_frame():
     eval('block:
             let slide = rectangle(~width: 800, ~height: 800, ~fill: "white")
@@ -194,18 +174,19 @@ fun get_funcs(stx):
   match stx:
   | 'fun $name($args, ...):
       $body
-     ...':
+     ...
+     [$func_name, ...]':
       ['fun $name($args, ...):
          $body',
        ...]
-  | _: error("glide expects a sequence of functions")
+  | _: error("glide expects a sequence of functions, with slides at the end")
 
 fun func_name(stx):
   match stx:
   | 'fun $name($args, ...):
       $body':
       name
-  | _: error("glide expects a sequence of functions")
+  | _: error("glide expects a sequence of functions, with slides at the end")
 
 fun find_last_func(stx):
   func_name(get_funcs(stx).last)
@@ -217,14 +198,13 @@ fun find_func(stx, name):
      skip_when func_name(func) != name
      func)[0]
 
-fun edit_slide(stx):
+fun edit_slide(stx, config_stx):
   let ui = UI(#false)
   let with_ids = add_pict_identities(stx)
   println("with_ids: " +& with_ids.to_source_string())
-  let state = gui.Obs(Glide(InputState(0, 0), with_ids, with_ids, ui, find_last_func(stx)))
-  
+  let state = gui.Obs(Glide(InputState(0, 0), with_ids, with_ids, ui, find_last_func(stx), eval(config_stx), config_stx))
 
-  let win = gui.Window(gui.Canvas(state, draw_for(state), ~mouse: onmousefor(state), ~key: onkeyfor(state)), ~size: [screenW, screenH])
+  let win = gui.Window(gui.Canvas(state, draw_for(state), ~mouse: onmousefor(state), ~key: onkeyfor(state)), ~size: [initialScreenW, initialScreenH])
   gui.render(win)
 
 
@@ -373,9 +353,9 @@ fun add_padding_to(stx, gpin, dx, dy):
   res
 
 meta:
-  fun glide(syntax):
-    '«edit_slide('$(syntax)')»'
+  fun glide(syntax, config):
+    '«edit_slide('$(syntax)', '$(config)')»'
 
-defn.macro 'glide:
+defn.macro 'glide $config:
               $stx':
-  glide(stx)
+  glide(stx, config)
