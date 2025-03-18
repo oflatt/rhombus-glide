@@ -33,7 +33,16 @@ fun traverse_stx(stx :: Syntax, f) :: Syntax:
   cond
   | stx is_a Group: traverse_group(stx, f)
   | stx is_a Term: traverse_term(stx, f)
-  | ~else: traverse_tail(stx, f)
+  | ~else: traverse_multi(stx, f)
+
+fun traverse_multi(stx :: Syntax, f) :: Syntax:
+  f(match stx
+    | '$group
+       ...':
+        let [new_stx, ...] = [traverse_stx(group, f), ...]
+        '$new_stx
+         ...'
+    | ~else: error("not a multi: " +& stx.to_source_string()))
 
 fun traverse_group(g, f) :: Syntax:
   f(block:

@@ -238,7 +238,7 @@ fun is_glide_call(stx):
 
 // returns stx, but whereever it finds a glide call,
 // it wraps it in a GPI__ call with a fresh number
-fun add_pict_identities(stx):
+fun add_pict_identities(stx) :: Syntax:
   def mutable current_id = 0
   traverse_stx(stx,
                fun (stx):
