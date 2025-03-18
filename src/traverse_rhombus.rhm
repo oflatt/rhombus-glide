@@ -10,7 +10,7 @@ import:
 
 
 export:
-  traverse_group
+  traverse_stx
 
 
 fun is_literal_group(stx):
@@ -28,6 +28,12 @@ fun nested([g, ...], builder, builder_stx, stxs, f):
 
 fun group_context(g):
   Syntax.relocate_group('#false', g)
+
+fun traverse_stx(stx :: Syntax, f) :: Syntax:
+  cond
+  | stx is_a Group: traverse_group(stx, f)
+  | stx is_a Term: traverse_term(stx, f)
+  | ~else: traverse_tail(stx, f)
 
 fun traverse_group(g, f) :: Syntax:
   f(block:
