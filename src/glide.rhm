@@ -19,6 +19,8 @@ import:
 export:
   glide
   pad
+  Rendered
+  draw_slide
 
 fun set_width(pict, width):
   let current_width = pict.width
@@ -49,36 +51,55 @@ let initialScreenH = 800
 
 class InputState(downMouseX, downMouseY)
 
-class UI(selected):
-  method draw(dx, inputState, current_frame):
+class Tab(scrollBarPos):
+  method draw(dx, picts):
+    // draw the pict on the left side of the screen
+    for (pict in picts):
+      pict.draw(dx)
+
+class UI(selected, config, original_config_stx, tabs):
+  method draw(dx, inputState, current_rendered):
     if this.selected:
     | block:
-        let selected_pict = find_pict_from_gpi(current_frame, this.selected)
-        let (x, y) = Find(selected_pict, ~horiz: #'left, ~vert: #'top).in(current_frame)
+        println("selected: " +& this.selected)
+        let selected_pict = find_pict_from_gpi(current_rendered.selected_slide, this.selected)
+        let (x, y) = Find(selected_pict, ~horiz: #'left, ~vert: #'top).in(current_rendered.selected_slide)
         let width = selected_pict.width
         let height = selected_pict.height
+        println("x: " +& x +& " y: " +& y +& " width: " +& width +& " height: " +& height)
         rectangle(~width: width, ~height: height, ~fill: #false, ~line: "blue", ~line_width: 4).pad(~left: x, ~top: y).draw(dx)
     | #false
 
+    // todo draw selected tab
+    //for (tab in this.tabs):
+      //tab.draw(dx, current_rendered.slides)  
+
+
 fun distance(x1, y1, x2, y2):
   math.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2))
+
+class Rendered(selected_slide, slides)
+
+fun draw_slide(pict):
+  let slide = rectangle(~width: 800, ~height: 800, ~fill: "white")
+  overlay(slide, pict, ~horiz: #'left, ~vert: #'top)
 
 // inputState is an InputState object
 // code is the current code for the body of the function
 // old_code is the code that we loaded in from the file
 // ui is a UI object
-// current_name is the name of the function being edited 
-class Glide(inputState, code, old_code, ui, current_name, config, config_original_stx):
-  method current_frame():
+// current_slide_index is the index of the current slide
+class Glide(inputState, code, old_code, ui, current_slide_index):
+  method current_rendered() :: Rendered:
+    let slides = get_slide_list(this.code)
+    let [slide, ...] = slides
     eval('block:
-            let slide = rectangle(~width: 800, ~height: 800, ~fill: "white")
             $(this.code)
-            overlay(slide, $(this.current_name)(), ~horiz: #'left, ~vert: #'top)')
+            Rendered(draw_slide($(slides[this.current_slide_index])), [draw_slide($slide), ...])')
 
-
-  method onmouse(ev):
-    let current:
-      this.current_frame()
+  method on_mouse(ev):
+    let current_rendered:
+      this.current_rendered()
   
     let with_input:
       if ev.kind == gui.MouseEvent.Kind.left_down:
@@ -89,7 +110,7 @@ class Glide(inputState, code, old_code, ui, current_name, config, config_origina
       cond 
       | ev.kind == gui.MouseEvent.Kind.left_up && distance(this.inputState.downMouseX, this.inputState.downMouseY, ev.x, ev.y) < 10:
           let new_selected:
-            find_clicked_pict(current, ev, this.ui.selected)
+            find_clicked_pict(current_rendered.selected_slide, ev, this.ui.selected)
           if new_selected:
           | with_input with (ui = (with_input.ui with (selected = new_selected.metadata()["GlidePictIdentity"])))
           | with_input with (ui = (with_input.ui with (selected = #false)))
@@ -107,9 +128,6 @@ class Glide(inputState, code, old_code, ui, current_name, config, config_origina
     if gui.KeyEvent.Key.escape == ev.code:
     | this with (ui = (this.ui with (selected = #false)))
     | this
-  
-  method current_func():
-    find_func(this.code, this.current_name)
 
 fun repeat_str(str, amt):
   def mutable res = ""
@@ -147,9 +165,9 @@ fun do_save(glide):
 fun draw_for(state):
   // draw a glide state to the dc
   fun draw(dc, glide):
-    let current_frame = glide.current_frame()
-    current_frame.draw(dc)
-    glide.ui.draw(dc, glide.inputState, current_frame)
+    let current_rendered = glide.current_rendered()
+    current_rendered.selected_slide.draw(dc)
+    glide.ui.draw(dc, glide.inputState, current_rendered)
 
     // if we need to save because data.code is different from data.old_code, draw save icon
     if glide.code != glide.old_code:
@@ -160,10 +178,10 @@ fun draw_for(state):
   
 
 
-fun onmousefor(state):
-  fun onmouse(ev :: gui.MouseEvent, area):
-    state <~ fun (old): old.onmouse(ev)
-  onmouse
+fun on_mousefor(state):
+  fun on_mouse(ev :: gui.MouseEvent, area):
+    state <~ fun (old): old.on_mouse(ev)
+  on_mouse
 
 fun onkeyfor(state):
   fun onkey(ev :: gui.KeyEvent, area):
@@ -179,6 +197,15 @@ fun get_funcs(stx):
       ['fun $name($args, ...):
          $body',
        ...]
+  | _: error("glide expects a sequence of functions, with slides at the end")
+
+fun get_slide_list(stx):
+  match stx:
+  | 'fun $name($args, ...):
+      $body
+     ...
+     [$expr, ...]':
+      [expr, ...]
   | _: error("glide expects a sequence of functions, with slides at the end")
 
 fun func_name(stx):
@@ -199,15 +226,13 @@ fun find_func(stx, name):
      func)[0]
 
 fun edit_slide(stx, config_stx):
-  let ui = UI(#false)
+  let ui = UI(#false, eval(config_stx), config_stx, [Tab(0)])
   let with_ids = add_pict_identities(stx)
   println("with_ids: " +& with_ids.to_source_string())
-  let state = gui.Obs(Glide(InputState(0, 0), with_ids, with_ids, ui, find_last_func(stx), eval(config_stx), config_stx))
+  let state = gui.Obs(Glide(InputState(0, 0), with_ids, with_ids, ui, 0))
 
-  let win = gui.Window(gui.Canvas(state, draw_for(state), ~mouse: onmousefor(state), ~key: onkeyfor(state)), ~size: [initialScreenW, initialScreenH])
+  let win = gui.Window(gui.Canvas(state, draw_for(state), ~mouse: on_mousefor(state), ~key: onkeyfor(state)), ~size: [initialScreenW, initialScreenH])
   gui.render(win)
-
-
 
 fun is_glide_call(stx):
   match stx:
