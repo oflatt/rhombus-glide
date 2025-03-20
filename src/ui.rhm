@@ -1,0 +1,55 @@
+#lang rhombus
+
+import:
+  rhombus/meta open
+  pict open
+  pict/text open
+  pict/rhombus open
+
+import:
+  "stx_helpers.rhm" open
+
+let initialScreenW = 1100
+let initialScreenH = 800 
+    
+let aspect_ratio = 16 / 9
+
+fun scale_to_width(pict, width):
+  let scale = width / pict.width
+  pict.scale(scale)
+
+fun mini_slide(pict):
+  let small = scale_to_width(pict, initialScreenW * 0.15)
+  rectangle(~around: small, ~line_width: 4).pad(~left: 0.025 * initialScreenW, ~top: 0.025 * initialScreenH, ~right: 0.025 * initialScreenW, ~bottom: 0.025 * initialScreenH)
+
+
+class Tab(scrollBarPos):
+  method draw(dx, picts):
+    // draw the pict on the left side of the screen
+    for:
+      each pict in picts
+      mini_slide(pict).draw(dx)
+
+
+
+class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected_tab):
+  method draw(dx, inputState, current_rendered):
+    if this.selected:
+    | block:
+        let selected_pict = find_pict_from_gpi(current_rendered.selected_slide, this.selected)
+        let (x, y) = Find(selected_pict, ~horiz: #'left, ~vert: #'top).in(current_rendered.selected_slide)
+        let width = selected_pict.width
+        let height = selected_pict.height
+        rectangle(~width: width, ~height: height, ~fill: #false, ~line: "blue", ~line_width: 4).pad(~left: x, ~top: y).draw(dx)
+    | #false
+
+    // todo draw selected tab
+    this.tabs[this.selected_tab].draw(dx, current_rendered.slides)  
+
+
+export:
+  initialScreenW
+  initialScreenH
+  aspect_ratio
+  UI
+  Tab

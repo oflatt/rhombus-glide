@@ -1,0 +1,145 @@
+#lang rhombus
+
+import:
+  rhombus/meta open
+  pict open
+  pict/text open
+  pict/rhombus open
+  "traverse_rhombus.rhm" open
+  "wrap_stx.rhm" open
+
+export:
+  all_defined
+
+
+
+// Adds a Glide Pict Identity to a pict
+// This gives a reference to it for selection. Used internally 
+// by the Glide editor and removed before saving back to the source file.
+fun GPI__(pict, n):
+  pict.set_metadata({ "GlidePictIdentity": n })
+
+
+
+
+fun find_pict_from_gpi(pict, n):
+  if pict.metadata().get("GlidePictIdentity", #false) == n
+  | pict
+  | block:
+      (for any: 
+        each child in pict.children
+        find_pict_from_gpi(child, n))
+
+
+fun is_pict_clicked(overallpict, pict, ev):
+  if pict.metadata().get("GlidePictIdentity", #false):
+  | block:
+      let (x, y) = Find(pict, ~horiz: #'left, ~vert: #'top).in(overallpict)
+      let width = pict.width
+      let height = pict.height
+      println("identity: " +& pict.metadata().get("GlidePictIdentity", #false))
+      println("x: " +& x +& " y: " +& y +& " width: " +& width +& " height: " +& height +& " ev.x: " +& ev.x +& " ev.y: " +& ev.y)
+      ev.x > x && ev.x < x + width && ev.y > y && ev.y < y + height
+  | #false
+
+// recursively find a pict that was clicked, picking
+// a child if something is already selected
+fun find_clicked_pict(pict, clickev, current_selected):
+  println("pict: " +& pict)
+  if current_selected:
+  | block:
+      let selected = find_pict_from_gpi(pict, current_selected)
+      if is_pict_clicked(pict, selected, clickev)
+      | block:
+          if selected.children.length() > 0:
+          | find_first_clicked_pict(pict, selected.children, clickev)
+          | find_first_clicked_pict(pict, [pict], clickev)
+      | find_first_clicked_pict(pict, [pict], clickev)
+  | find_first_clicked_pict(pict, [pict], clickev)
+
+fun find_first_clicked_pict(overall_pict, pict_children, click):
+  for any:
+    each child in pict_children
+    if is_pict_clicked(overall_pict, child, click)
+    | block:
+        println("found clicked pict")
+        child
+    | find_first_clicked_pict(overall_pict, child.children, click)
+
+// adds a keyword argument to a function call with the given value
+// or modifies the value if the keyword is already present
+fun modify_keyword_val_of(stx, keyword, new_val):
+  match stx:
+  | '$name($args, ...)':
+      def mutable found = #false
+      let new_args = (for List:
+                        each arg in [args, ...]
+                        match arg:
+                        | '$key: $val':
+                            if key.to_source_string() == keyword
+                            | block:
+                                found := #true
+                                '$key: $new_val'
+                            | arg
+                        | _: arg)
+      let [new_arg, ...] = new_args
+      '$name($(new_arg), ...)'
+  | _: error("modify_keyword_val_of expects a function call")
+
+fun add_to_keyword_val_of(stx, keyword, val_to_add):
+  match stx:
+  | '$name($args, ...)':
+      let new_args = (for List:
+                        each arg in [args, ...]
+                        match arg:
+                        | '$key: $val':
+                            if key.to_source_string() == keyword
+                            | '$key: $val + $val_to_add'
+                            | arg
+                        | _: arg)
+      let [new_arg, ...] = new_args
+      '$name($(new_arg), ...)'
+  | _: error("add_to_keyword_val_of expects a function call")
+
+fun apply_to_gpi(stx, gpin, f):
+  traverse_stx(stx,
+               fun (stx):
+                 match stx:
+                 | 'GPI__($pict, $n)':
+                     println("applying to gpi: " +& n)
+                     if eval(n) == gpin
+                     | f(stx)
+                     | stx
+                 | _: stx)
+
+// finds the pict source code with the given GPI number,
+// replacing the keyword value with new_val
+fun modify_keyword_val(stx, gpin, keyword, new_val):
+  apply_to_gpi(stx, gpin,
+               fun (pict):
+                 modify_keyword_val_of(pict, keyword, new_val))
+
+fun add_to_keyword_val(stx, gpin, keyword, val_to_add):
+  apply_to_gpi(stx, gpin,
+               fun (pict):
+                 add_to_keyword_val_of(pict, keyword, val_to_add))
+
+fun add_padding_to(stx, gpin, dx, dy):
+  let padding_left_pos = dx
+  let padding_top_pos = dy
+  let res:
+    apply_to_gpi(stx, gpin,
+                 fun (pict):
+                  wrap_pad(pict, padding_left_pos, padding_top_pos))
+  println("before: " +& stx.to_source_string())
+  println("with padding: " +& res.to_source_string())
+  println(res)
+  res
+
+fun replace_const(stx, newnum):
+  match stx:
+  | '$name ($arg, ...)':
+      '$name ($(replace_const(arg, newnum)), ...)'
+  | '~width: $num':
+      '~width: $newnum'
+  | _: stx
