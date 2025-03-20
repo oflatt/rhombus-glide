@@ -57,16 +57,14 @@ class Tab(scrollBarPos):
     for (pict in picts):
       pict.draw(dx)
 
-class UI(selected, config, original_config_stx, tabs):
+class UI(selected, config, original_config_stx, tabs, tab_screen_width):
   method draw(dx, inputState, current_rendered):
     if this.selected:
     | block:
-        println("selected: " +& this.selected)
         let selected_pict = find_pict_from_gpi(current_rendered.selected_slide, this.selected)
         let (x, y) = Find(selected_pict, ~horiz: #'left, ~vert: #'top).in(current_rendered.selected_slide)
         let width = selected_pict.width
         let height = selected_pict.height
-        println("x: " +& x +& " y: " +& y +& " width: " +& width +& " height: " +& height)
         rectangle(~width: width, ~height: height, ~fill: #false, ~line: "blue", ~line_width: 4).pad(~left: x, ~top: y).draw(dx)
     | #false
 
@@ -93,9 +91,10 @@ class Glide(inputState, code, old_code, ui, current_slide_index):
   method current_rendered() :: Rendered:
     let slides = get_slide_list(this.code)
     let [slide, ...] = slides
+    let room_for_tabs = initialScreenW * ui.tab_screen_width
     eval('block:
             $(this.code)
-            Rendered(draw_slide($(slides[this.current_slide_index])), [draw_slide($slide), ...])')
+            Rendered(draw_slide($(slides[this.current_slide_index])).pad(~left: $room_for_tabs), [draw_slide($slide), ...])')
 
   method on_mouse(ev):
     let current_rendered:
@@ -226,7 +225,7 @@ fun find_func(stx, name):
      func)[0]
 
 fun edit_slide(stx, config_stx):
-  let ui = UI(#false, eval(config_stx), config_stx, [Tab(0)])
+  let ui = UI(#false, eval(config_stx), config_stx, [Tab(0)], 0.2)
   let with_ids = add_pict_identities(stx)
   println("with_ids: " +& with_ids.to_source_string())
   let state = gui.Obs(Glide(InputState(0, 0), with_ids, with_ids, ui, 0))
