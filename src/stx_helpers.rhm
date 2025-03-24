@@ -144,3 +144,78 @@ fun replace_const(stx, newnum):
   | '~width: $num':
       '~width: $newnum'
   | _: stx
+
+
+fun get_funcs(stx):
+  match stx:
+  | 'fun $name($args, ...):
+      $body
+     ...
+     [$func_name, ...]':
+      ['fun $name($args, ...):
+         $body',
+       ...]
+  | _: error("glide expects a sequence of functions, with slides at the end")
+
+fun get_slide_list(stx):
+  match stx:
+  | 'fun $name($args, ...):
+      $body
+     ...
+     [$expr, ...]':
+      [expr, ...]
+  | _: error("glide expects a sequence of functions, with slides at the end")
+
+fun func_name(stx):
+  match stx:
+  | 'fun $name($args, ...):
+      $body':
+      name
+  | _: error("glide expects a sequence of functions, with slides at the end")
+
+fun find_last_func(stx):
+  func_name(get_funcs(stx).last)
+
+
+fun find_func(stx, name):
+  (for List:
+     each func in get_funcs(stx)
+     skip_when func_name(func) != name
+     func)[0]
+
+// TODO use make_tmp_id to make an actually unique name?
+fun get_fresh_slide_name(code):
+  let func_names = get_funcs(code).map(func_name)
+  for any:
+    each i in 0..
+    if !func_names.contains("slide" +& i)
+    | "slide" +& i
+    | #false  
+
+fun add_new_func(code, name):
+  let new_func = 'fun $name():
+                    nothing'
+  match code:
+  | 'fun $name($args, ...):
+      $body
+     ...
+     [$expr, ...]':
+      'fun $name($args, ...):
+         $body
+       ...
+       $new_func
+       [$expr, ...]'
+  | _: error("glide expects a sequence of functions, with slides at the end")
+
+
+fun new_slide_ref(code, new_name):
+  match code:
+  | 'fun $name($args, ...):
+      $body
+     ...
+     [$expr, ...]':
+      'fun $name($args, ...):
+         $body
+       ...
+       [$expr, ..., $new_name()]'
+  | _: error("glide expects a sequence of functions, with slides at the end")

@@ -28,15 +28,19 @@ fun mini_slide(pict):
 
 class Tab(scrollBarPos, name):
   method pict(picts):
-    for values(res = nothing):
-      each:
-        pict in picts
-      stack(res, mini_slide(pict))
-  
-  method draw(dx, picts):
-    // draw the pict on the left side of the screen
-    this.pict(picts).draw(dx)
+    let plus_slide = mini_slide(text("+"))
 
+    let combined:
+      for values(res = nothing):
+        each:
+          pict in (picts ++ [plus_slide])
+        stack(res, mini_slide(pict))
+
+    [combined, plus_slide]
+
+  method draw(dc, picts):
+    // draw the pict on the left side of the screen
+    this.pict(picts)[0].draw(dc)
 
 class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected_tab, current_slide_index):
   method draw(dx, inputState, current_rendered):
@@ -62,7 +66,7 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
   // return a new UI after a mouse event
   method on_mouse(ev, current_rendered):
     let slides_tab = this.slides_tab()
-    let tab_pict = slides_tab.pict(current_rendered.slides)
+    let [tab_pict, plus_pict] = slides_tab.pict(current_rendered.slides)
     if ev.kind == gui.MouseEvent.Kind.left_down:
     | block:
         let clicked:
@@ -77,7 +81,9 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
         println("clicked: " +& clicked)
         if clicked:
         | this with (current_slide_index = clicked)
-        | this
+        | if is_pict_clicked(tab_pict, plus_pict, ev)
+          | this with (current_slide_index = current_rendered.slides.length())
+          | this
     | this
 
 export:

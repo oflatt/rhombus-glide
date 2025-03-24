@@ -7,10 +7,10 @@ import:
 
 glide { "editmode": #true }:
   fun main():
-    beside(~sep: 100, rectangle(~width: 100), rectangle())
-
+   beside(~sep: 100, rectangle(~width: 100), rectangle())
   fun other():
-    rectangle()
-
-  [main(), main(), other()]
+   rectangle()
+  fun slide1():
+     nothing
+  [main(), main(), other(), slide1()slide1()slide2()]
 2
