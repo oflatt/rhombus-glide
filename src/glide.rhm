@@ -49,14 +49,14 @@ fun draw_slide(pict):
 // old_code is the code that we loaded in from the file
 // ui is a UI object
 // current_slide_index is the index of the current slide
-class Glide(inputState, code, old_code, ui, current_slide_index):
+class Glide(inputState, code, old_code, ui):
   method current_rendered() :: Rendered:
     let slides = get_slide_list(this.code)
     let [slide, ...] = slides
     let room_for_tabs = initialScreenW * ui.tab_screen_width
     eval('block:
             $(this.code)
-            Rendered(draw_slide($(slides[this.current_slide_index])).pad(~left: $room_for_tabs), [draw_slide($slide), ...])')
+            Rendered(draw_slide($(slides[this.ui.current_slide_index])).pad(~left: $room_for_tabs), [draw_slide($slide), ...])')
 
   method on_mouse(ev):
     let current_rendered:
@@ -79,7 +79,10 @@ class Glide(inputState, code, old_code, ui, current_slide_index):
           with_input with (code = add_padding_to(this.code, this.ui.selected, ev.x - this.inputState.downMouseX, ev.y - this.inputState.downMouseY))
       | ~else: with_input
     
-    with_selected
+    let with_ui_event:
+      with_selected with (ui = with_selected.ui.on_mouse(ev, current_rendered))
+
+    with_ui_event
 
   method onkey(ev):
     if ev.code == Char"s" && gui.KeyEvent.Down.control in ev.downs:
@@ -187,10 +190,10 @@ fun find_func(stx, name):
      func)[0]
 
 fun edit_slide(stx, config_stx):
-  let ui = UI(#false, eval(config_stx), config_stx, [Tab(0)], 0.2, 0)
+  let ui = UI(#false, eval(config_stx), config_stx, [Tab(0, "slides")], 0.2, 0, 1)
   let with_ids = add_pict_identities(stx)
   println("with_ids: " +& with_ids.to_source_string())
-  let state = gui.Obs(Glide(InputState(0, 0), with_ids, with_ids, ui, 0))
+  let state = gui.Obs(Glide(InputState(0, 0), with_ids, with_ids, ui))
 
   let win = gui.Window(gui.Canvas(state, draw_for(state), ~mouse: on_mousefor(state), ~key: onkeyfor(state)), ~size: [initialScreenW, initialScreenH])
   gui.render(win)

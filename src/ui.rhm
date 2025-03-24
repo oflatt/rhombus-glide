@@ -5,6 +5,9 @@ import:
   pict open
   pict/text open
   pict/rhombus open
+  gui expose:
+    ~>
+    <~
 
 import:
   "stx_helpers.rhm" open
@@ -23,7 +26,7 @@ fun mini_slide(pict):
   rectangle(~around: small, ~line_width: 4).pad(~left: 0.025 * initialScreenW, ~top: 0.025 * initialScreenH, ~right: 0.025 * initialScreenW, ~bottom: 0.025 * initialScreenH)
 
 
-class Tab(scrollBarPos):
+class Tab(scrollBarPos, name):
   method pict(picts):
     for values(res = nothing):
       each:
@@ -35,7 +38,7 @@ class Tab(scrollBarPos):
     this.pict(picts).draw(dx)
 
 
-class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected_tab):
+class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected_tab, current_slide_index):
   method draw(dx, inputState, current_rendered):
     if this.selected:
     | block:
@@ -49,6 +52,33 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
     // todo draw selected tab
     this.tabs[this.selected_tab].draw(dx, current_rendered.slides)  
 
+  method slides_tab():
+    for any:
+      each tab in this.tabs
+      if tab.name == "slides"
+      | tab
+      | #false
+
+  // return a new UI after a mouse event
+  method on_mouse(ev, current_rendered):
+    let slides_tab = this.slides_tab()
+    let tab_pict = slides_tab.pict(current_rendered.slides)
+    if ev.kind == gui.MouseEvent.Kind.left_down:
+    | block:
+        let clicked:
+          for any:
+            each:
+              pict in current_rendered.slides
+              i in 0..
+            println("checking " +& i)
+            if is_pict_clicked(tab_pict, pict, ev)
+            | i
+            | #false
+        println("clicked: " +& clicked)
+        if clicked:
+        | this with (current_slide_index = clicked)
+        | this
+    | this
 
 export:
   initialScreenW

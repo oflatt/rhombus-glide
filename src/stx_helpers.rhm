@@ -31,16 +31,17 @@ fun find_pict_from_gpi(pict, n):
         find_pict_from_gpi(child, n))
 
 
-fun is_pict_clicked(overallpict, pict, ev):
+fun is_glide_pict_clicked(overallpict, pict, ev):
   if pict.metadata().get("GlidePictIdentity", #false):
-  | block:
-      let (x, y) = Find(pict, ~horiz: #'left, ~vert: #'top).in(overallpict)
-      let width = pict.width
-      let height = pict.height
-      println("identity: " +& pict.metadata().get("GlidePictIdentity", #false))
-      println("x: " +& x +& " y: " +& y +& " width: " +& width +& " height: " +& height +& " ev.x: " +& ev.x +& " ev.y: " +& ev.y)
-      ev.x > x && ev.x < x + width && ev.y > y && ev.y < y + height
+  | is_pict_clicked(overallpict, pict, ev)
   | #false
+
+fun is_pict_clicked(overallpict, pict, ev):
+  let (x, y) = Find(pict, ~horiz: #'left, ~vert: #'top).in(overallpict)
+  let (x2, y2) = Find(pict, ~horiz: #'right, ~vert: #'bottom).in(overallpict)
+  println("identity: " +& pict.metadata().get("GlidePictIdentity", #false))
+  println("x: " +& x +& " y: " +& y +& " x2: " +& x2 +& " y2: " +& y2)
+  ev.x > x && ev.x < x2 && ev.y > y && ev.y < y2
 
 // recursively find a pict that was clicked, picking
 // a child if something is already selected
@@ -49,7 +50,7 @@ fun find_clicked_pict(pict, clickev, current_selected):
   if current_selected:
   | block:
       let selected = find_pict_from_gpi(pict, current_selected)
-      if is_pict_clicked(pict, selected, clickev)
+      if is_glide_pict_clicked(pict, selected, clickev)
       | block:
           if selected.children.length() > 0:
           | find_first_clicked_pict(pict, selected.children, clickev)
@@ -60,7 +61,7 @@ fun find_clicked_pict(pict, clickev, current_selected):
 fun find_first_clicked_pict(overall_pict, pict_children, click):
   for any:
     each child in pict_children
-    if is_pict_clicked(overall_pict, child, click)
+    if is_glide_pict_clicked(overall_pict, child, click)
     | block:
         println("found clicked pict")
         child
