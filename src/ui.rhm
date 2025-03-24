@@ -11,7 +11,7 @@ import:
 
 let initialScreenW = 1100
 let initialScreenH = 800 
-    
+
 let aspect_ratio = 16 / 9
 
 fun scale_to_width(pict, width):
@@ -24,12 +24,15 @@ fun mini_slide(pict):
 
 
 class Tab(scrollBarPos):
+  method pict(picts):
+    for values(res = nothing):
+      each:
+        pict in picts
+      stack(res, mini_slide(pict))
+  
   method draw(dx, picts):
     // draw the pict on the left side of the screen
-    for:
-      each pict in picts
-      mini_slide(pict).draw(dx)
-
+    this.pict(picts).draw(dx)
 
 
 class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected_tab):
