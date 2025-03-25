@@ -4,8 +4,7 @@ import:
   glide open
   pict open
 
-
-glide { "editmode": #true }:
+glide { "editmode": #true, "tools0": [ "bubble" ] }:
   fun main():
     beside(~sep: 100, rectangle(~width: 100), pad(rectangle(), -4, 11))
   

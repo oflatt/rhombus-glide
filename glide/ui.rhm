@@ -12,7 +12,7 @@ import:
 import:
   "stx_helpers.rhm" open
 
-let initialScreenW = 1100
+let initialScreenW = 1700
 let initialScreenH = 800 
 
 let aspect_ratio = 16 / 9

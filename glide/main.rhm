@@ -17,12 +17,14 @@ import:
   "ui.rhm" open
   "stx_helpers.rhm" open
   "wrap_stx.rhm" open
+  "elements.rhm"
 
 export:
   glide
   pad
   Rendered
   draw_slide
+  all_from("elements.rhm")
 
 fun set_width(pict, width):
   let current_width = pict.width
@@ -43,6 +45,13 @@ fun distance(x1, y1, x2, y2):
   math.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2))
 
 class Rendered(selected_slide, slides)
+
+fun draw_inset_slide(pict):
+  let slide = draw_slide(pict)
+  let inset_percent = 0.2
+  let grey_background = rectangle(~width: initialScreenH * aspect_ratio, ~height: initialScreenH, ~fill: "grey")
+  let slide = draw_slide(pict).scale(0.8)
+  overlay(grey_background, slide)
 
 fun draw_slide(pict):
   let slide = rectangle(~width: initialScreenH * aspect_ratio, ~height: initialScreenH, ~fill: "white")
@@ -71,7 +80,7 @@ class Glide(inputState, code, old_code, srcloc, ui):
     let room_for_tabs = initialScreenW * ui.tab_screen_width
     eval('block:
             $(code)
-            Rendered(draw_slide($(slides[this.ui.current_slide_index])).pad(~left: $room_for_tabs), [draw_slide($slide), ...])')
+            Rendered(draw_inset_slide($(slides[this.ui.current_slide_index])).pad(~left: $room_for_tabs), [draw_inset_slide($slide), ...])')
 
 
   method pad_action_start(current_rendered, ev):
