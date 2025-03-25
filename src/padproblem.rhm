@@ -21,3 +21,5 @@ let new:
   | ~else: error("not a multi: " +& original.to_source_string())
 
 new.to_source_string()
+
+'2'.source_properties()

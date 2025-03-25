@@ -12,8 +12,8 @@ glide { "editmode": #true }:
   fun other():
     rectangle()
   
-  fun slide1():
-    nothing
+  fun slide0():
+      nothing
   
-  [main(), main(), other(), slide1()]
+  [main(), main(), other(), slide0()]
 2

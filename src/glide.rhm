@@ -49,7 +49,7 @@ fun draw_slide(pict):
 // old_code is the code that we loaded in from the file
 // ui is a UI object
 // current_slide_index is the index of the current slide
-class Glide(inputState, code, old_code, ui):
+class Glide(inputState, code, old_code, srcloc, ui):
   method current_rendered() :: Rendered:
     let slides = get_slide_list(this.code)
     let [slide, ...] = slides
@@ -92,13 +92,13 @@ class Glide(inputState, code, old_code, ui):
     with_new_slide
 
   method onkey(ev):
-    if ev.code == Char"s" && gui.KeyEvent.Down.control in ev.downs:
+    let with_save = if ev.code == Char"s" && gui.KeyEvent.Down.control in ev.downs:
     | do_save(this)
-    | "other"
+    | this
 
     if gui.KeyEvent.Key.escape == ev.code:
-    | this with (ui = (this.ui with (selected = #false)))
-    | this
+    | with_save with (ui = (with_save.ui with (selected = #false)))
+    | with_save
 
   method add_new_slide():
     let fresh_slide_name = get_fresh_slide_name(this.code)
@@ -118,8 +118,10 @@ fun indent(code, amt):
                     repeat_str(" ", amt) +& line)
   String.join(indented, "\n")
 
+
+// todo why all these constants? no idea
 fun do_save(glide):
-  let srcloc = glide.old_code.srcloc()
+  let srcloc = glide.srcloc
   
   let source = filesystem.read_string(srcloc.source)
   let before = String.substring(source, 0, srcloc.position-3)
@@ -135,6 +137,10 @@ fun do_save(glide):
   
   println("saving to: " +& srcloc.source)
   filesystem.write_string(srcloc.source, new_source, ~exists: #'replace)
+
+  // now update the srcloc of the glide's code
+  let new_src_loc = Srcloc(srcloc.source, srcloc.line, srcloc.column, srcloc.position, String.length(new_middle)-2)
+  glide with (old_code = glide.code, srcloc = new_src_loc)
 
 
 
@@ -168,8 +174,7 @@ fun onkeyfor(state):
 fun edit_slide(stx, config_stx):
   let ui = UI(#false, eval(config_stx), config_stx, [Tab(0, "slides")], 0.2, 0, 1)
   let with_ids = add_pict_identities(stx)
-  println("with_ids: " +& with_ids.to_source_string())
-  let state = gui.Obs(Glide(InputState(0, 0), with_ids, with_ids, ui))
+  let state = gui.Obs(Glide(InputState(0, 0), with_ids, with_ids, with_ids.srcloc(), ui))
 
   let win = gui.Window(gui.Canvas(state, draw_for(state), ~mouse: on_mousefor(state), ~key: onkeyfor(state)), ~size: [initialScreenW, initialScreenH])
   gui.render(win)
@@ -203,10 +208,6 @@ fun remove_pict_identities(stx):
                  | 'GPI__($pict, $n)':
                      pict
                  | _: stx)
-
-
-
-
 
 meta:
   fun glide(syntax, config):

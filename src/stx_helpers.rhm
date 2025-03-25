@@ -171,7 +171,7 @@ fun func_name(stx):
   match stx:
   | 'fun $name($args, ...):
       $body':
-      name
+      name.to_source_string()
   | _: error("glide expects a sequence of functions, with slides at the end")
 
 fun find_last_func(stx):
@@ -191,7 +191,7 @@ fun get_fresh_slide_name(code):
     each i in 0..
     if !func_names.contains("slide" +& i)
     | Syntax.make_temp_id("slide" +& i, ~keep_name: #true)
-    | #false  
+    | #false
 
 fun add_new_func(code, name):
   let new:
