@@ -30,8 +30,7 @@ fun scale_to_width(pict, width):
 fun mini_slide(pict):
   rectangle(~around: pict, ~line_width: 4).pad(~left: 0.025 * initialScreenW, ~top: 0.025 * initialScreenH, ~right: 0.025 * initialScreenW, ~bottom: 0.025 * initialScreenH)
 
-
-class Tab(scrollBarPos, name):
+class Tab(scrollBarPos):
   method pict(canvas_size, picts, tab_screen_width):
     let mini_slide_size = tab_screen_width * 0.7 * canvas_size.width
     let plus_slide = scale_to_width(mini_slide(text("+")), mini_slide_size)
@@ -48,6 +47,9 @@ class Tab(scrollBarPos, name):
     // draw the pict on the left side of the screen
     this.pict(dc.size, picts, tab_screen_width)[0].draw(dc)
 
+
+// INVARIANT: number of tabs is the same as number
+// of tabs in code, plus one for the slides
 class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected_tab, current_slide_index):
   method draw(dx, inputState, current_rendered):
     if this.selected:
@@ -62,17 +64,10 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
     // todo draw selected tab
     this.tabs[this.selected_tab].draw(dx, current_rendered.slides, this.tab_screen_width)
 
-  method slides_tab():
-    for any:
-      each tab in this.tabs
-      if tab.name == "slides"
-      | tab
-      | #false
-
   // return a new UI after a mouse event
   method on_mouse(ev, current_rendered, canvas_size):
-    let slides_tab = this.slides_tab()
-    let [tab_pict, plus_pict] = slides_tab.pict(canvas_size, current_rendered.slides, this.tab_screen_width)
+    let current_tab = this.tabs[this.selected_tab]
+    let [tab_pict, plus_pict] = current_tab.pict(canvas_size, current_rendered.slides, this.tab_screen_width)
     if ev.kind == gui.MouseEvent.Kind.left_down:
     | block:
         let clicked:

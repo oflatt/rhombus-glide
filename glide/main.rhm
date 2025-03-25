@@ -17,7 +17,7 @@ import:
   "ui.rhm" open
   "stx_helpers.rhm" open
   "wrap_stx.rhm" open
-  "elements.rhm"
+  "elements.rhm" open
 
 export:
   glide
@@ -233,7 +233,14 @@ fun onkeyfor(state):
 
 
 fun edit_slide(stx, config_stx):
-  let ui = UI(#false, eval(config_stx), config_stx, [Tab(0, "slides")], 0.15, 0, 1)
+  let tabs_stx = get_tabs(stx)
+  let num_tabs = tabs_stx.length() + 1
+  let tabs:
+    for List:
+      each _i in 0..num_tabs
+      Tab(0)
+
+  let ui = UI(#false, eval(config_stx), config_stx, tabs, 0.15, 0, 1)
   let with_ids = add_pict_identities(stx)
   let state = gui.Obs(Glide(InputState(Action.none, 0, 0, 0, 0), with_ids, with_ids, with_ids.srcloc(), ui))
 

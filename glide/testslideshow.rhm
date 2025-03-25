@@ -4,7 +4,7 @@ import:
   glide open
   pict open
 
-glide { "editmode": #true, "tools0": [ "bubble" ] }:
+glide { "todo configurations here" : 2}:
   fun main():
     beside(~sep: 100, rectangle(~width: 100), pad(rectangle(), -4, 11))
   
@@ -12,7 +12,11 @@ glide { "editmode": #true, "tools0": [ "bubble" ] }:
     rectangle()
   
   fun slide0():
-      nothing
+    nothing
+
+  let tabs:
+    [[bubble()]]
   
-  [main(), main(), other(), slide0()]
+  let slides:
+    [main(), main(), other(), slide0()]
 2
