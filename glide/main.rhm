@@ -24,6 +24,7 @@ export:
   pad
   Rendered
   draw_slide
+  scale_to_fit
   all_from("elements.rhm")
 
 fun set_width(pict, width):
@@ -48,9 +49,7 @@ class Rendered(selected_slide, slides)
 
 fun draw_inset_slide(pict):
   let slide = draw_slide(pict)
-  let inset_percent = 0.2
-  let grey_background = rectangle(~width: initialScreenH * aspect_ratio, ~height: initialScreenH, ~fill: "grey")
-  let slide = draw_slide(pict).scale(0.8)
+  let grey_background = rectangle(~width: slide.width * 1.2, ~height: slide.height * 1.2, ~fill: "gray")
   overlay(grey_background, slide)
 
 fun draw_slide(pict):
@@ -73,14 +72,20 @@ class Glide(inputState, code, old_code, srcloc, ui):
             add_padding_to(this.code, this.ui.selected, this.inputState.currentX - this.inputState.downMouseX, this.inputState.currentY - this.inputState.downMouseY)
     | this.code
 
-  method current_rendered() :: Rendered:
+  method current_rendered(canvas_size) :: Rendered:
     let code = this.code_with_action()
     let slides = get_slide_list(code)
     let [slide, ...] = slides
-    let room_for_tabs = initialScreenW * ui.tab_screen_width
+    let room_for_tabs = canvas_size.width * ui.tab_screen_width
+    let room_for_slides = canvas_size.width - room_for_tabs
     eval('block:
             $(code)
-            Rendered(draw_inset_slide($(slides[this.ui.current_slide_index])).pad(~left: $room_for_tabs), [draw_inset_slide($slide), ...])')
+            Rendered(
+              scale_to_fit(
+                draw_inset_slide($(slides[this.ui.current_slide_index])),
+                [$room_for_slides, $canvas_size.height])
+                  .pad(~left: $room_for_tabs),
+              [draw_inset_slide($slide), ...])')
 
 
   method pad_action_start(current_rendered, ev):
@@ -120,16 +125,16 @@ class Glide(inputState, code, old_code, srcloc, ui):
     this with (inputState = new_input_state)
 
 
-  method on_mouse(ev):
+  method on_mouse(ev, canvas_size):
     let updated = this.update_input_state(ev)
     let current_rendered:
-      updated.current_rendered()
+      updated.current_rendered(canvas_size)
   
     let with_input:
       updated.pad_action_start(current_rendered, ev).pad_action_end(current_rendered, ev)
 
     let with_ui_event:
-      with_input with (ui = with_input.ui.on_mouse(ev, current_rendered))
+      with_input with (ui = with_input.ui.on_mouse(ev, current_rendered, canvas_size))
 
     // when a new slide is needed, the UI sets the current slide out of bounds
     // add a new slide here to fix this problem
@@ -192,17 +197,24 @@ fun do_save(glide):
   glide with (old_code = glide.code, srcloc = new_src_loc)
 
 
+fun save_icon():
+  overlay(
+    rectangle(~width: 50, ~height: 50, ~fill: "gray", ~line: "black", ~line_width: 3),
+    stack(text("save"),
+          text("ctrl+s"))
+  )
+
 
 fun draw_for(state):
   // draw a glide state to the dc
   fun draw(dc, glide):
-    let current_rendered = glide.current_rendered()
+    let current_rendered = glide.current_rendered(dc.size)
     current_rendered.selected_slide.draw(dc)
     glide.ui.draw(dc, glide.inputState, current_rendered)
 
     // if we need to save because data.code is different from data.old_code, draw save icon
     if glide.code != glide.old_code:
-    | let savePict = rectangle(~width: 50, ~height: 50, ~fill: "gray", ~line: "black", ~line_width: 3).pad(~left: 750, ~top: 750)
+    | let savePict = scale_to_fit(save_icon(), [dc.size.width * 0.1, dc.size.height * 0.1]).pad(~top: dc.size.height * 0.9, ~left: dc.size.width * 0.9)
       savePict.draw(dc)
     | #false
   draw
@@ -211,7 +223,7 @@ fun draw_for(state):
 
 fun on_mousefor(state):
   fun on_mouse(ev :: gui.MouseEvent, area):
-    state <~ fun (old): old.on_mouse(ev)
+    state <~ fun (old): old.on_mouse(ev, area.client_size)
   on_mouse
 
 fun onkeyfor(state):
@@ -221,7 +233,7 @@ fun onkeyfor(state):
 
 
 fun edit_slide(stx, config_stx):
-  let ui = UI(#false, eval(config_stx), config_stx, [Tab(0, "slides")], 0.2, 0, 1)
+  let ui = UI(#false, eval(config_stx), config_stx, [Tab(0, "slides")], 0.15, 0, 1)
   let with_ids = add_pict_identities(stx)
   let state = gui.Obs(Glide(InputState(Action.none, 0, 0, 0, 0), with_ids, with_ids, with_ids.srcloc(), ui))
 
