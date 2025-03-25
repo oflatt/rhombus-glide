@@ -1,0 +1,10 @@
+#lang rhombus
+import:
+  rhombus/meta open
+
+
+
+let slide1 = 2
+
+
+Syntax.make_temp_id("slide")
