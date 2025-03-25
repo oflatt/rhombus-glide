@@ -32,8 +32,12 @@ fun set_height(pict, height):
   let current_height = pict.height
   pict.pad(~bottom: height - current_height)
 
-class InputState(downMouseX, downMouseY)
 
+enum Action:
+  pad
+  none
+
+class InputState(action, downMouseX, downMouseY, currentX, currentY)
 
 fun distance(x1, y1, x2, y2):
   math.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2))
@@ -50,37 +54,73 @@ fun draw_slide(pict):
 // ui is a UI object
 // current_slide_index is the index of the current slide
 class Glide(inputState, code, old_code, srcloc, ui):
+  method code_with_action() :: Syntax:
+    if this.inputState.action == Action.pad:
+    | block:
+        cond 
+        | distance(this.inputState.downMouseX, this.inputState.downMouseY, this.inputState.currentX, this.inputState.currentY) < 10:
+            this.code
+        | ~else:
+            add_padding_to(this.code, this.ui.selected, this.inputState.currentX - this.inputState.downMouseX, this.inputState.currentY - this.inputState.downMouseY)
+    | this.code
+
   method current_rendered() :: Rendered:
-    let slides = get_slide_list(this.code)
+    let code = this.code_with_action()
+    let slides = get_slide_list(code)
     let [slide, ...] = slides
     let room_for_tabs = initialScreenW * ui.tab_screen_width
     eval('block:
-            $(this.code)
+            $(code)
             Rendered(draw_slide($(slides[this.ui.current_slide_index])).pad(~left: $room_for_tabs), [draw_slide($slide), ...])')
 
+
+  method pad_action_start(current_rendered, ev):
+    cond
+    | ev.kind == gui.MouseEvent.Kind.left_down:
+        // if we're clicking an already selected pict
+        let selected = find_pict_from_gpi(current_rendered.selected_slide, this.ui.selected)
+        if is_pict_clicked(current_rendered.selected_slide, selected, ev):
+        | this with (inputState = InputState(Action.pad, ev.x, ev.y, ev.x, ev.y))
+        | this
+    | ~else: this
+
+  method pad_action_end_release(current_rendered, ev):
+    // if the distance traveled is less than 10, select a new pict
+    if distance(this.inputState.downMouseX, this.inputState.downMouseY, ev.x, ev.y) < 10:
+    | block:
+        let new_selected:
+          find_clicked_pict(current_rendered.selected_slide, ev, this.ui.selected)
+        println("new selected: " +& new_selected)
+        if new_selected:
+        | this with (ui = (this.ui with (selected = new_selected.metadata()["GlidePictIdentity"])))
+        | this with (ui = (this.ui with (selected = #false)))
+    | block:
+        // replace code with the newest code_with_action()
+        let updated = this.code_with_action()
+        this with (code = updated)
+
+  method pad_action_end(current_rendered, ev):
+    cond
+    | ev.kind == gui.MouseEvent.Kind.left_up:
+        let new_input_state = this.inputState with (action = Action.none)
+        this.pad_action_end_release(current_rendered, ev) with (inputState = new_input_state)
+    | ~else: this
+
+  method update_input_state(ev):
+    let new_input_state = this.inputState with (currentX = ev.x, currentY = ev.y)
+    this with (inputState = new_input_state)
+
+
   method on_mouse(ev):
+    let updated = this.update_input_state(ev)
     let current_rendered:
-      this.current_rendered()
+      updated.current_rendered()
   
     let with_input:
-      if ev.kind == gui.MouseEvent.Kind.left_down:
-      | this with (inputState = (this.inputState with (downMouseX = ev.x, downMouseY = ev.y)))
-      | this
+      updated.pad_action_start(current_rendered, ev).pad_action_end(current_rendered, ev)
 
-    let with_selected:
-      cond 
-      | ev.kind == gui.MouseEvent.Kind.left_up && distance(this.inputState.downMouseX, this.inputState.downMouseY, ev.x, ev.y) < 10:
-          let new_selected:
-            find_clicked_pict(current_rendered.selected_slide, ev, this.ui.selected)
-          if new_selected:
-          | with_input with (ui = (with_input.ui with (selected = new_selected.metadata()["GlidePictIdentity"])))
-          | with_input with (ui = (with_input.ui with (selected = #false)))
-      | ev.kind == gui.MouseEvent.Kind.left_up:
-          with_input with (code = add_padding_to(this.code, this.ui.selected, ev.x - this.inputState.downMouseX, ev.y - this.inputState.downMouseY))
-      | ~else: with_input
-    
     let with_ui_event:
-      with_selected with (ui = with_selected.ui.on_mouse(ev, current_rendered))
+      with_input with (ui = with_input.ui.on_mouse(ev, current_rendered))
 
     // when a new slide is needed, the UI sets the current slide out of bounds
     // add a new slide here to fix this problem
@@ -174,7 +214,7 @@ fun onkeyfor(state):
 fun edit_slide(stx, config_stx):
   let ui = UI(#false, eval(config_stx), config_stx, [Tab(0, "slides")], 0.2, 0, 1)
   let with_ids = add_pict_identities(stx)
-  let state = gui.Obs(Glide(InputState(0, 0), with_ids, with_ids, with_ids.srcloc(), ui))
+  let state = gui.Obs(Glide(InputState(Action.none, 0, 0, 0, 0), with_ids, with_ids, with_ids.srcloc(), ui))
 
   let win = gui.Window(gui.Canvas(state, draw_for(state), ~mouse: on_mousefor(state), ~key: onkeyfor(state)), ~size: [initialScreenW, initialScreenH])
   gui.render(win)
