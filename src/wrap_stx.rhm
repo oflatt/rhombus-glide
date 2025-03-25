@@ -16,3 +16,11 @@ fun wrap_pad(stx, x, y):
   let y2 = '$y'.relocate_group(c)
   let parens = '($(stx2), $(x2), $(y2))'.relocate(parens)
   '$f $parens'
+
+fun extend_prefix(stx, prefix):
+  let old_prefix = stx.group_property(#'#{raw-prefix}) || ""
+  stx.group_property(#'#{raw-prefix}, Pair(old_prefix, prefix))
+
+fun extend_tail(stx, tail):
+  let old_tail = stx.group_property(#'#{raw-tail}) || ""
+  stx.group_property(#'#{raw-tail}, Pair(old_tail, tail))

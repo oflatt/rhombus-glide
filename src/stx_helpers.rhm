@@ -7,6 +7,7 @@ import:
   pict/rhombus open
   "traverse_rhombus.rhm" open
   "wrap_stx.rhm" open
+  "rebuild.rhm" open
 
 export:
   all_defined
@@ -189,33 +190,38 @@ fun get_fresh_slide_name(code):
   for any:
     each i in 0..
     if !func_names.contains("slide" +& i)
-    | "slide" +& i
+    | Syntax.make_temp_id("slide" +& i, ~keep_name: #true)
     | #false  
 
 fun add_new_func(code, name):
-  let new_func = 'fun $name():
-                    nothing'
+  let new:
+    'fun $name():
+      nothing'
+  let new_func:
+    extend_tail(new,
+                "\n\n")
   match code:
-  | 'fun $name($args, ...):
-      $body
+  | '$func
      ...
-     [$expr, ...]':
-      'fun $name($args, ...):
-         $body
+     $slidelist':
+      '$func
        ...
-       $new_func
-       [$expr, ...]'
-  | _: error("glide expects a sequence of functions, with slides at the end")
 
+       $new_func
+       $slidelist'
+  | _: error("glide expects a sequence of functions, with slides at the end")
 
 fun new_slide_ref(code, new_name):
   match code:
-  | 'fun $name($args, ...):
-      $body
+  | '$func
      ...
-     [$expr, ...]':
-      'fun $name($args, ...):
-         $body
-       ...
-       [$expr, ..., $new_name()]'
+     $(exprs && '[$expr, ...]')':
+      let new_name = '$new_name()'
+      let with_comma = extend_prefix(new_name, ", ")
+      let new = brackets_syntax([expr, ..., with_comma], exprs)
+      let funcs:
+        '$func
+         ...'
+      '$funcs
+       $new'
   | _: error("glide expects a sequence of functions, with slides at the end")

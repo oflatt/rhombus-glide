@@ -1,13 +1,23 @@
 #lang rhombus
 
-fun pad(x, y): x
 
-let two = 2
-let with_pad:
-  let orig = 'pad(a, b)'
-  let '$f $(parens && '($a, $b)')' = orig
-  let parens:
-    '($(Syntax.make(two).relocate_group(a)), $(Syntax.make(two).relocate_group(b)))'.relocate(parens)
-  '$f $parens'
+let original:
+  'pad(a, b, c)
+   
+   pad(b,
+       c, d)
+   2'
 
-eval(with_pad)
+original.to_source_string()
+
+let new:
+  match original:
+  | '$expr
+     ...
+     2':
+      '$expr
+       ...
+       3'
+  | ~else: error("not a multi: " +& original.to_source_string())
+
+new.to_source_string()
