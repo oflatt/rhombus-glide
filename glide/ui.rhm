@@ -67,9 +67,7 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
     this.tabs_pict(dx.size, current_rendered).pict.draw(dx)
 
   method tab_tools(current_rendered):
-    if this.selected_tab+1 == this.tabs.length()
-    | current_rendered.slides
-    | current_rendered.tabs[this.selected_tab]
+    current_rendered.tabs[this.selected_tab]
 
   method tabs_pict(canvas_size, current_rendered):
     let [current_tab, plus_button] = this.tabs[this.selected_tab].pict(canvas_size, this.tab_tools(current_rendered), this.tab_screen_width)
@@ -102,7 +100,7 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
         let clicked:
           for any:
             each:
-              pict in current_rendered.slides
+              pict in current_rendered.tabs.last
               i in 0..
             println("checking " +& i)
             if is_pict_clicked(tabs_pict.pict, pict, ev)
@@ -112,7 +110,7 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
         if clicked:
         | this with (current_slide_index = clicked)
         | if is_pict_clicked(tabs_pict.pict, tabs_pict.plus_button, ev)
-          | this with (current_slide_index = current_rendered.slides.length())
+          | this with (current_slide_index = current_rendered.tabs.last().length())
           | this
     | this
 

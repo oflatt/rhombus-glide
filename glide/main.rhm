@@ -45,7 +45,10 @@ class InputState(action, downMouseX, downMouseY, currentX, currentY)
 fun distance(x1, y1, x2, y2):
   math.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2))
 
-class Rendered(selected_slide, tabs, slides)
+// screen is a pict for the current screen
+// tabs is a list of lists
+// each list contains picts for the tab
+class Rendered(selected_slide, tabs)
 
 fun draw_inset_slide(pict):
   let slide = draw_slide(pict)
@@ -80,16 +83,18 @@ class Glide(inputState, code, old_code, srcloc, ui):
     let room_for_slides = canvas_size.width - room_for_tabs
 
     // TODO don't evaluate slides and tabs multiple times like we do here
-    eval('block:
-            $(code)
-            Rendered(
-              scale_to_fit(
-                draw_inset_slide($(slides)[$this.ui.current_slide_index]),
-                [$room_for_slides, $canvas_size.height])
-                  .pad(~left: $room_for_tabs),
-              ($tabs).map(fun (tab): tab.map(draw_inset_slide)),
-              ($slides).map(draw_inset_slide))')
-
+    let tabs:
+      eval('block:
+              $(code)
+              $tabs ++ [$slides]')
+    
+    println(tabs)
+    let slide:
+      scale_to_fit(
+        draw_inset_slide(tabs[0][this.ui.current_slide_index]),
+        [room_for_slides, canvas_size.height])
+        .pad(~left: room_for_tabs)
+    Rendered(slide, tabs)
 
   method pad_action_start(current_rendered, ev):
     cond
@@ -142,7 +147,7 @@ class Glide(inputState, code, old_code, srcloc, ui):
     // when a new slide is needed, the UI sets the current slide out of bounds
     // add a new slide here to fix this problem
     let with_new_slide:
-      if with_ui_event.ui.current_slide_index == current_rendered.slides.length():
+      if with_ui_event.ui.current_slide_index == current_rendered.tabs.last.length:
       | with_ui_event.add_new_slide()
       | with_ui_event
 
@@ -243,7 +248,7 @@ fun edit_slide(stx, config_stx):
       each _i in 0..num_tabs
       Tab(0)
 
-  let ui = UI(#false, eval(config_stx), config_stx, tabs, 0.15, 0, 1)
+  let ui = UI(#false, eval(config_stx), config_stx, tabs, 0.15, 0, 0)
   let with_ids = add_pict_identities(stx)
   let state = gui.Obs(Glide(InputState(Action.none, 0, 0, 0, 0), with_ids, with_ids, with_ids.srcloc(), ui))
 
