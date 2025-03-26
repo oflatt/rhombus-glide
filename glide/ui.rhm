@@ -32,7 +32,7 @@ fun mini_slide(pict):
 
 class Tab(scrollBarPos):
   method pict(canvas_size, picts, tab_screen_width):
-    let mini_slide_size = tab_screen_width * 0.7 * canvas_size.width
+    let mini_slide_size = tab_screen_width * 0.8 * canvas_size.width
     let plus_slide = scale_to_width(mini_slide(text("+")), mini_slide_size)
 
     let combined:
@@ -41,12 +41,14 @@ class Tab(scrollBarPos):
           pict in (picts ++ [plus_slide])
         stack(res, scale_to_width(mini_slide(pict), mini_slide_size))
 
-    [combined, plus_slide]
+    [combined.pad(~left: tab_screen_width * 0.1 * canvas_size.width, ~right: tab_screen_width * 0.1 * canvas_size.width), plus_slide]
 
   method draw(dc, picts, tab_screen_width):
     // draw the pict on the left side of the screen
     this.pict(dc.size, picts, tab_screen_width)[0].draw(dc)
 
+
+class TabsPict(pict, plus_button, tab_buttons)
 
 // INVARIANT: number of tabs is the same as number
 // of tabs in code, plus one for the slides
@@ -62,12 +64,34 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
     | #false
 
     // todo draw selected tab
-    this.tabs[this.selected_tab].draw(dx, current_rendered.slides, this.tab_screen_width)
+    this.tabs_pict(dx.size, current_rendered).pict.draw(dx)
+
+  method tabs_pict(canvas_size, current_rendered):
+    let [current_tab, plus_button] = this.tabs[this.selected_tab].pict(canvas_size, current_rendered.slides, this.tab_screen_width)
+
+    // now draw clickable tabs on the side for each one
+    let tabs:
+      for List:
+        each:
+          tab in this.tabs
+          i in 0..
+        overlay(rectangle(~width: canvas_size.width * 0.03, ~height: canvas_size.height * 0.1, ~fill: "white", ~line: "black", ~line_width: 4),
+                text(to_string(i)))
+
+    let stacked:
+      for values(res = nothing):
+        each:
+          tab in tabs
+        stack(res, tab)
+    let res:
+      beside(~sep: 0, current_tab, stacked)
+    
+    TabsPict(res, plus_button, tabs)
 
   // return a new UI after a mouse event
   method on_mouse(ev, current_rendered, canvas_size):
+    let tabs_pict = this.tabs_pict(canvas_size, current_rendered)
     let current_tab = this.tabs[this.selected_tab]
-    let [tab_pict, plus_pict] = current_tab.pict(canvas_size, current_rendered.slides, this.tab_screen_width)
     if ev.kind == gui.MouseEvent.Kind.left_down:
     | block:
         let clicked:
@@ -76,13 +100,13 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
               pict in current_rendered.slides
               i in 0..
             println("checking " +& i)
-            if is_pict_clicked(tab_pict, pict, ev)
+            if is_pict_clicked(tabs_pict.pict, pict, ev)
             | i
             | #false
         println("clicked: " +& clicked)
         if clicked:
         | this with (current_slide_index = clicked)
-        | if is_pict_clicked(tab_pict, plus_pict, ev)
+        | if is_pict_clicked(tabs_pict.pict, tabs_pict.plus_button, ev)
           | this with (current_slide_index = current_rendered.slides.length())
           | this
     | this
