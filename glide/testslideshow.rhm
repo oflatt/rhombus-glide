@@ -6,14 +6,14 @@ import:
 
 glide { "todo configurations here" : 2}:
   fun main():
-    beside(~sep: 100, rectangle(~width: 100), pad(rectangle(), -4, 11))
+    beside(~sep: 100, rectangle(~width: 100), pad(pad(rectangle(), 55, 54), -4, 11))
   
   fun other():
     rectangle()
   
   fun slide0():
     nothing
-
+  
   let tabs:
     [[bubble()]]
   

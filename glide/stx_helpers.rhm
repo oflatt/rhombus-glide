@@ -164,28 +164,36 @@ fun get_funcs(stx):
        ...]
   | _: error("invalid glide program. Expected sequence of functions, then tabs:, then slides:")
 
+fun stx_to_list(stx):
+  match stx:
+  | '[$expr, ...]':
+      [expr, ...]
+  | _: error("expected list")
+
 fun get_tabs(stx):
   match stx:
   | '$func
      ...
      let tabs:
-       [$tab, ...]
+      $tabs
      $slides':
-      [tab, ...]
+      tabs
   | _: error("invalid glide program. Expected sequence of functions, then tabs:, then slides:")
 
-fun get_slide_list(stx):
+fun get_slides(stx):
   match stx:
   | 'fun $name($args, ...):
       $body
      ...
      let tabs:
-       $tab1
-       ...
+       $tabs
      let slides:
-      [$expr, ...]':
-      [expr, ...]
+       $slides':
+      slides
   | _: error("glide expects a sequence of functions, with slides at the end")
+
+fun get_slide_list(stx):
+  stx_to_list(get_slides(stx))
 
 fun func_name(stx):
   match stx:

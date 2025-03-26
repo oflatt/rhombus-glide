@@ -45,7 +45,7 @@ class InputState(action, downMouseX, downMouseY, currentX, currentY)
 fun distance(x1, y1, x2, y2):
   math.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2))
 
-class Rendered(selected_slide, slides)
+class Rendered(selected_slide, tabs, slides)
 
 fun draw_inset_slide(pict):
   let slide = draw_slide(pict)
@@ -74,18 +74,21 @@ class Glide(inputState, code, old_code, srcloc, ui):
 
   method current_rendered(canvas_size) :: Rendered:
     let code = this.code_with_action()
-    let slides = get_slide_list(code)
-    let [slide, ...] = slides
+    let slides = get_slides(code)
+    let tabs = get_tabs(code)
     let room_for_tabs = canvas_size.width * ui.tab_screen_width
     let room_for_slides = canvas_size.width - room_for_tabs
+
+    // TODO don't evaluate slides and tabs multiple times like we do here
     eval('block:
             $(code)
             Rendered(
               scale_to_fit(
-                draw_inset_slide($(slides[this.ui.current_slide_index])),
+                draw_inset_slide($(slides)[$this.ui.current_slide_index]),
                 [$room_for_slides, $canvas_size.height])
                   .pad(~left: $room_for_tabs),
-              [draw_inset_slide($slide), ...])')
+              ($tabs).map(fun (tab): tab.map(draw_inset_slide)),
+              ($slides).map(draw_inset_slide))')
 
 
   method pad_action_start(current_rendered, ev):
@@ -233,7 +236,7 @@ fun onkeyfor(state):
 
 
 fun edit_slide(stx, config_stx):
-  let tabs_stx = get_tabs(stx)
+  let tabs_stx = stx_to_list(get_tabs(stx))
   let num_tabs = tabs_stx.length() + 1
   let tabs:
     for List:

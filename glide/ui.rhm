@@ -66,8 +66,13 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
     // todo draw selected tab
     this.tabs_pict(dx.size, current_rendered).pict.draw(dx)
 
+  method tab_tools(current_rendered):
+    if this.selected_tab+1 == this.tabs.length()
+    | current_rendered.slides
+    | current_rendered.tabs[this.selected_tab]
+
   method tabs_pict(canvas_size, current_rendered):
-    let [current_tab, plus_button] = this.tabs[this.selected_tab].pict(canvas_size, current_rendered.slides, this.tab_screen_width)
+    let [current_tab, plus_button] = this.tabs[this.selected_tab].pict(canvas_size, this.tab_tools(current_rendered), this.tab_screen_width)
 
     // now draw clickable tabs on the side for each one
     let tabs:

@@ -1,0 +1,10 @@
+#lang rhombus
+
+import:
+  pict open
+
+export:
+  all_defined
+
+fun bubble():
+  rectangle()
