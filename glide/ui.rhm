@@ -94,7 +94,11 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
         each:
           tab in this.tabs
           i in 0..
-        overlay(rectangle(~width: canvas_size.width * 0.03, ~height: canvas_size.height * 0.1, ~fill: "white", ~line: "black", ~line_width: 4),
+        let fill_color:
+          if i == this.selected_tab
+          | "lightblue"
+          | "white"
+        overlay(rectangle(~width: canvas_size.width * 0.03, ~height: canvas_size.height * 0.1, ~fill: fill_color, ~line: "black", ~line_width: 4),
                 text(to_string(i)))
 
     let stacked:
