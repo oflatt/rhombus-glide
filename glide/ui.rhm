@@ -51,7 +51,7 @@ class Tab(scrollBarPos):
       for values(res = nothing):
         each:
           pict in (picts ++ [plus_slide])
-        stack(~sep: mini_slide_size * 0.2, res, scale_to_width(mini_slide(pict), mini_slide_size))
+        stack(~sep: mini_slide_size * 0.2, res, scale_to_width(pict, mini_slide_size))
 
     [combined.pad(~left: tab_screen_width * 0.1 * canvas_size.width, ~right: tab_screen_width * 0.1 * canvas_size.width), plus_slide]
 
@@ -60,7 +60,7 @@ class Tab(scrollBarPos):
     this.pict(dc.size, picts, tab_screen_width)[0].draw(dc)
 
 
-class TabsPict(pict, plus_button, tab_buttons)
+class TabsPict(pict, slide_buttons, plus_button, tab_buttons)
 
 class SlideIndex(tab, index)
 
@@ -85,7 +85,8 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
     current_rendered.tabs[this.selected_tab]
 
   method tabs_pict(canvas_size, current_rendered):
-    let [current_tab, plus_button] = this.tabs[this.selected_tab].pict(canvas_size, this.tab_tools(current_rendered), this.tab_screen_width)
+    let slide_buttons = this.tab_tools(current_rendered).map(mini_slide)
+    let [current_tab, plus_button] = this.tabs[this.selected_tab].pict(canvas_size, slide_buttons, this.tab_screen_width)
 
     // now draw clickable tabs on the side for each one
     let tabs:
@@ -104,7 +105,7 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
     let res:
       beside(~sep: 0, current_tab, stacked)
     
-    TabsPict(res, plus_button, tabs)
+    TabsPict(res, slide_buttons, plus_button, tabs)
 
   // return a new UI after a mouse event
   method on_mouse(ev, current_rendered, canvas_size):
@@ -115,11 +116,12 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
         let clicked:
           for any:
             each:
-              pict in current_rendered.tabs[this.selected_tab]
+              pict in tabs_pict.slide_buttons
               i in 0..
             if is_pict_clicked(tabs_pict.pict, pict, ev)
             | i
             | #false
+        println("clicked: " +& clicked)
         if clicked:
         | this with (current_slide_index = SlideIndex(this.selected_tab, clicked))
         | if is_pict_clicked(tabs_pict.pict, tabs_pict.plus_button, ev)
