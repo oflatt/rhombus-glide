@@ -103,13 +103,11 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
           tab in tabs
         stack(res, tab)
     let res:
-      beside(~sep: 0, current_tab, stacked)
+      beside(~sep: 0, ~vert: #'top, current_tab, stacked)
     
     TabsPict(res, slide_buttons, plus_button, tabs)
 
-  // return a new UI after a mouse event
-  method on_mouse(ev, current_rendered, canvas_size):
-    let tabs_pict = this.tabs_pict(canvas_size, current_rendered)
+  method mouse_slide_button(ev, tabs_pict, current_rendered):
     let current_tab = this.tabs[this.selected_tab]
     if ev.kind == gui.MouseEvent.Kind.left_down:
     | block:
@@ -128,6 +126,29 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
           | this with (current_slide_index = SlideIndex(this.selected_tab, current_rendered.tabs.last().length()))
           | this
     | this
+
+  method mouse_tab_button(ev, tabs_pict, current_rendered):
+    if ev.kind == gui.MouseEvent.Kind.left_down:
+    | block:
+        let clicked:
+          for any:
+            each:
+              pict in tabs_pict.tab_buttons
+              i in 0..
+            if is_pict_clicked(tabs_pict.pict, pict, ev)
+            | i
+            | #false
+        println("clicked: " +& clicked)
+        if clicked:
+        | this with (selected_tab = clicked)
+        | this
+    | this
+
+  // return a new UI after a mouse event
+  method on_mouse(ev, current_rendered, canvas_size):
+    let tabs_pict = this.tabs_pict(canvas_size, current_rendered)
+    
+    this.mouse_slide_button(ev, tabs_pict, current_rendered).mouse_tab_button(ev, tabs_pict, current_rendered)
 
 export:
   initialScreenW
