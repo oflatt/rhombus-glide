@@ -87,7 +87,6 @@ class Glide(inputState, code, old_code, srcloc, ui):
               $(code)
               $tabs ++ [$slides]')
     
-    println(tabs)
     let slide:
       scale_to_fit(
         draw_inset_slide(tabs[this.ui.current_slide_index.tab][this.ui.current_slide_index.index]),

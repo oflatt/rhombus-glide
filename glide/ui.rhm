@@ -62,6 +62,7 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
         let (x, y) = Find(selected_pict, ~horiz: #'left, ~vert: #'top).in(current_rendered.selected_slide)
         let width = selected_pict.width
         let height = selected_pict.height
+        println("drawing selected")
         rectangle(~width: width, ~height: height, ~fill: #false, ~line: "blue", ~line_width: 4).pad(~left: x, ~top: y).draw(dx)
     | #false
 
@@ -102,7 +103,7 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
         let clicked:
           for any:
             each:
-              pict in current_rendered.tabs[this.current_slide_index.tab]
+              pict in current_rendered.tabs[this.selected_tab]
               i in 0..
             println("checking " +& i)
             if is_pict_clicked(tabs_pict.pict, pict, ev)
