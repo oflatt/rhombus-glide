@@ -24,11 +24,23 @@ fun scale_to_fit(pict, size):
   pict.scale(scale)
 
 fun scale_to_width(pict, width):
-  let scale = width / pict.width
-  pict.scale(scale)
+  if pict.width > 0:
+  | let scale = width / pict.width
+    pict.scale(scale)
+  | pict
+
+fun draw_inset_slide(pict):
+  let slide = draw_slide(pict)
+  let grey_background = rectangle(~width: slide.width * 1.2, ~height: slide.height * 1.2, ~fill: "gray")
+  overlay(grey_background, slide)
+
+fun draw_slide(pict):
+  let slide = rectangle(~width: initialScreenH * aspect_ratio, ~height: initialScreenH, ~fill: "white")
+  overlay(slide, pict, ~horiz: #'left, ~vert: #'top)
+
 
 fun mini_slide(pict):
-  rectangle(~around: pict, ~line_width: 4).pad(~left: 0.025 * initialScreenW, ~top: 0.025 * initialScreenH, ~right: 0.025 * initialScreenW, ~bottom: 0.025 * initialScreenH)
+  draw_inset_slide(rectangle(~around: draw_slide(pict), ~line_width: 4))
 
 class Tab(scrollBarPos):
   method pict(canvas_size, picts, tab_screen_width):
@@ -39,7 +51,7 @@ class Tab(scrollBarPos):
       for values(res = nothing):
         each:
           pict in (picts ++ [plus_slide])
-        stack(res, scale_to_width(mini_slide(pict), mini_slide_size))
+        stack(~sep: mini_slide_size * 0.2, res, scale_to_width(mini_slide(pict), mini_slide_size))
 
     [combined.pad(~left: tab_screen_width * 0.1 * canvas_size.width, ~right: tab_screen_width * 0.1 * canvas_size.width), plus_slide]
 
@@ -105,15 +117,13 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
             each:
               pict in current_rendered.tabs[this.selected_tab]
               i in 0..
-            println("checking " +& i)
             if is_pict_clicked(tabs_pict.pict, pict, ev)
             | i
             | #false
-        println("clicked: " +& clicked)
         if clicked:
-        | this with (current_slide_index = clicked)
+        | this with (current_slide_index = SlideIndex(this.selected_tab, clicked))
         | if is_pict_clicked(tabs_pict.pict, tabs_pict.plus_button, ev)
-          | this with (current_slide_index = current_rendered.tabs.last().length())
+          | this with (current_slide_index = SlideIndex(this.selected_tab, current_rendered.tabs.last().length()))
           | this
     | this
 
@@ -125,3 +135,5 @@ export:
   Tab
   scale_to_fit
   SlideIndex
+  draw_slide
+  draw_inset_slide

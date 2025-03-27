@@ -50,14 +50,6 @@ fun distance(x1, y1, x2, y2):
 // each list contains picts for the tab
 class Rendered(selected_slide, tabs)
 
-fun draw_inset_slide(pict):
-  let slide = draw_slide(pict)
-  let grey_background = rectangle(~width: slide.width * 1.2, ~height: slide.height * 1.2, ~fill: "gray")
-  overlay(grey_background, slide)
-
-fun draw_slide(pict):
-  let slide = rectangle(~width: initialScreenH * aspect_ratio, ~height: initialScreenH, ~fill: "white")
-  overlay(slide, pict, ~horiz: #'left, ~vert: #'top)
 
 // inputState is an InputState object
 // code is the current code for the body of the function
@@ -246,7 +238,7 @@ fun edit_slide(stx, config_stx):
       each _i in 0..num_tabs
       Tab(0)
 
-  let ui = UI(#false, eval(config_stx), config_stx, tabs, 0.15, 0, SlideIndex(num_tabs-1, 0))
+  let ui = UI(#false, eval(config_stx), config_stx, tabs, 0.15, num_tabs-1, SlideIndex(num_tabs-1, 0))
   let with_ids = add_pict_identities(stx)
   let state = gui.Obs(Glide(InputState(Action.none, 0, 0, 0, 0), with_ids, with_ids, with_ids.srcloc(), ui))
 
