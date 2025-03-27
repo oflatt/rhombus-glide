@@ -155,15 +155,14 @@ fun get_funcs(stx):
      ...
 
      let tabs:
-       $tab1
-       ...
+       $tabs
 
      let slides:
-      [$func_name, ...]':
+      $slides':
       ['fun $name($args, ...):
           $body',
        ...]
-  | _: error("invalid glide program. Expected sequence of functions, then tabs:, then slides:")
+  | _: error("get_funcs: invalid glide program. Expected sequence of functions, then tabs:, then slides:")
 
 fun stx_to_list(stx):
   match stx:
@@ -177,21 +176,19 @@ fun get_tabs(stx):
      ...
      let tabs:
       $tabs
-     $slides':
+     let slides:
+      $slides':
       tabs
-  | _: error("invalid glide program. Expected sequence of functions, then tabs:, then slides:")
+  | _: error("get_tabs: invalid glide program. Expected sequence of functions, then tabs:, then slides:")
 
 fun get_slides(stx):
   match stx:
-  | 'fun $name($args, ...):
-      $body
+  | '$func_or_tabs
      ...
-     let tabs:
-       $tabs
      let slides:
        $slides':
       slides
-  | _: error("glide expects a sequence of functions, with slides at the end")
+  | _: error("get_slides: glide expects a sequence of functions, with slides at the end")
 
 fun get_slide_list(stx):
   stx_to_list(get_slides(stx))
@@ -201,7 +198,7 @@ fun func_name(stx):
   | 'fun $name($args, ...):
       $body':
       name.to_source_string()
-  | _: error("glide expects a sequence of functions, with slides at the end")
+  | _: error("func_name: glide expects a sequence of functions, with slides at the end")
 
 fun find_last_func(stx):
   func_name(get_funcs(stx).last)
@@ -232,28 +229,64 @@ fun add_new_func(code, name):
   match code:
   | '$func
      ...
+     $tabs
      $slidelist':
       '$func
        ...
 
        $new_func
+       $tabs
        $slidelist'
-  | _: error("glide expects a sequence of functions, with slides at the end")
+  | _: error("add_new_func: glide expects a sequence of functions, with slides at the end")
 
-fun new_slide_ref(code, new_name):
+fun stx_list_add(stx_list, new_stx):
+  match stx_list:
+  | '[$expr, ...]':
+      let with_comma = extend_prefix(new_stx, ", ")
+      brackets_syntax([expr, ..., with_comma], stx_list)
+  | _: error("stx_list_add: expected list")
+
+fun new_main_slide_ref(code, new_name):
   match code:
   | '$func
      ...
-     $(exprs && '[$expr, ...]')':
+     let slides:
+      $(exprs)':
       let new_name = '$new_name()'
-      let with_comma = extend_prefix(new_name, ", ")
-      let new = brackets_syntax([expr, ..., with_comma], exprs)
+      let new = stx_list_add(exprs, new_name)
       let funcs:
         '$func
          ...'
       '$funcs
-       $new'
-  | _: error("glide expects a sequence of functions, with slides at the end")
+       let slides:
+        $new'
+  | _: error("new_slide_ref: glide expects a sequence of functions, with slides at the end")
+
+fun new_slide_ref(code, new_name, selected_tab):
+  // if the selected tab is the last one, use new_main_slide_ref
+  match code:
+  | '$func
+     ...
+     let tabs:
+      $tabs
+     let slides:
+      $slides':
+      match tabs:
+      | '[$tab, ...]':
+          let tab_list = [tab, ...]
+          if selected_tab == tab_list.length()
+          | new_main_slide_ref(code, new_name)
+          | let new_tab_list = stx_list_add(tab_list[selected_tab], '$new_name()')
+            let new_tab_list = tab_list.set(selected_tab, new_tab_list)
+            let new_tabs = brackets_syntax(new_tab_list, tabs)
+            '$func
+             ...
+             let tabs:
+               $new_tabs
+             let slides:
+               $slides'
+      | ~else: error("new_slide_ref: expected list of tabs")
+  | ~else: error("new_slide_ref: expected glide program")
 
 
 // returns stx, but whereever it finds a glide call,
