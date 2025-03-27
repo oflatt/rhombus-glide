@@ -50,6 +50,8 @@ class Tab(scrollBarPos):
 
 class TabsPict(pict, plus_button, tab_buttons)
 
+class SlideIndex(tab, index)
+
 // INVARIANT: number of tabs is the same as number
 // of tabs in code, plus one for the slides
 class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected_tab, current_slide_index):
@@ -100,7 +102,7 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
         let clicked:
           for any:
             each:
-              pict in current_rendered.tabs.last
+              pict in current_rendered.tabs[this.current_slide_index.tab]
               i in 0..
             println("checking " +& i)
             if is_pict_clicked(tabs_pict.pict, pict, ev)
@@ -121,3 +123,4 @@ export:
   UI
   Tab
   scale_to_fit
+  SlideIndex

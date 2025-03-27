@@ -63,7 +63,6 @@ fun draw_slide(pict):
 // code is the current code for the body of the function
 // old_code is the code that we loaded in from the file
 // ui is a UI object
-// current_slide_index is the index of the current slide
 class Glide(inputState, code, old_code, srcloc, ui):
   method code_with_action() :: Syntax:
     if this.inputState.action == Action.pad:
@@ -91,7 +90,7 @@ class Glide(inputState, code, old_code, srcloc, ui):
     println(tabs)
     let slide:
       scale_to_fit(
-        draw_inset_slide(tabs[0][this.ui.current_slide_index]),
+        draw_inset_slide(tabs[this.ui.current_slide_index.tab][this.ui.current_slide_index.index]),
         [room_for_slides, canvas_size.height])
         .pad(~left: room_for_tabs)
     Rendered(slide, tabs)
@@ -147,7 +146,7 @@ class Glide(inputState, code, old_code, srcloc, ui):
     // when a new slide is needed, the UI sets the current slide out of bounds
     // add a new slide here to fix this problem
     let with_new_slide:
-      if with_ui_event.ui.current_slide_index == current_rendered.tabs.last.length:
+      if with_ui_event.ui.current_slide_index.index == current_rendered.tabs[with_ui_event.ui.current_slide_index.tab].length:
       | with_ui_event.add_new_slide()
       | with_ui_event
 
@@ -248,7 +247,7 @@ fun edit_slide(stx, config_stx):
       each _i in 0..num_tabs
       Tab(0)
 
-  let ui = UI(#false, eval(config_stx), config_stx, tabs, 0.15, 0, 0)
+  let ui = UI(#false, eval(config_stx), config_stx, tabs, 0.15, 0, SlideIndex(num_tabs-1, 0))
   let with_ids = add_pict_identities(stx)
   let state = gui.Obs(Glide(InputState(Action.none, 0, 0, 0, 0), with_ids, with_ids, with_ids.srcloc(), ui))
 
