@@ -255,3 +255,32 @@ fun new_slide_ref(code, new_name):
        $new'
   | _: error("glide expects a sequence of functions, with slides at the end")
 
+
+// returns stx, but whereever it finds a glide call,
+// it wraps it in a GPI__ call with a fresh number
+fun add_pict_identities(stx) :: Syntax:
+  def mutable current_id = 0
+  traverse_stx(stx,
+               fun (stx):
+                 if is_glide_call(stx):
+                 | block:
+                     let current = current_id
+                     current_id := current_id + 1
+                     Syntax.relocate_group(
+                       'GPI__($stx, $current)',
+                       stx)
+                 | stx)
+
+fun remove_pict_identities(stx):
+  traverse_stx(stx,
+               fun (stx):
+                 match stx:
+                 | 'GPI__($pict, $n)':
+                     pict
+                 | _: stx)
+
+fun is_glide_call(stx):
+  match stx:
+  | '$name($args, ...)':
+      name.to_source_string() == "rectangle" || name.to_source_string() == "beside"
+  | _: #false
