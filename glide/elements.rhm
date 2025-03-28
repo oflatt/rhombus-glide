@@ -8,7 +8,7 @@ export:
   all_defined
 
 fun bubble(~width: width = 100, ~height: height = 100, ~text: text = "text"):
-  pict.overlay(pict.rectangle(~width: width, ~height: height, ~fill: "blue", ~line: "black", ~line_width: 3),
+  pict.overlay(pict.rectangle(~width: width, ~height: height, ~fill: "lightblue", ~line: "black", ~line_width: 3),
                pict.text(text))
 
 
