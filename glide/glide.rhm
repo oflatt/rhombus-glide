@@ -27,9 +27,13 @@ export:
 
 enum Action:
   pad
+  slidedrag
   none
 
-class InputState(action, downMouseX, downMouseY, currentX, currentY)
+class SlideDrag(tab_index, slide_index)
+
+// action data can be #false or a SlideDrag
+class InputState(action, downMouseX, downMouseY, currentX, currentY, action_data)
 
 fun distance(x1, y1, x2, y2):
   math.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2))
@@ -81,31 +85,33 @@ class Glide(inputState, code, old_code, srcloc, ui):
         // if we're clicking an already selected pict
         let selected = find_pict_from_gpi(current_rendered.selected_slide, this.ui.selected)
         if is_pict_clicked(current_rendered.selected_slide, selected, ev):
-        | this with (inputState = InputState(Action.pad, ev.x, ev.y, ev.x, ev.y))
-        | this with (inputState = InputState(Action.none, ev.x, ev.y, ev.x, ev.y))
+        | this with (inputState = InputState(Action.pad, ev.x, ev.y, ev.x, ev.y, #false))
+        | this with (inputState = InputState(Action.none, ev.x, ev.y, ev.x, ev.y, #false))
     | ~else: this
-
-  method pad_action_end_release(current_rendered, ev):
-    // if the distance traveled is less than 10, select a new pict
-    if distance(this.inputState.downMouseX, this.inputState.downMouseY, ev.x, ev.y) < 10:
-    | block:
-        let new_selected:
-          find_clicked_pict(current_rendered.selected_slide, ev, this.ui.selected)
-        println("new selected: " +& new_selected)
-        if new_selected:
-        | this with (ui = (this.ui with (selected = new_selected.metadata()["GlidePictIdentity"])))
-        | this with (ui = (this.ui with (selected = #false)))
-    | block:
-        // replace code with the newest code_with_action()
-        let updated = this.code_with_action()
-        this with (code = updated)
 
   method pad_action_end(current_rendered, ev):
     cond
-    | ev.kind == gui.MouseEvent.Kind.left_up:
-        let new_input_state = this.inputState with (action = Action.none)
-        this.pad_action_end_release(current_rendered, ev) with (inputState = new_input_state)
+    | ev.kind == gui.MouseEvent.Kind.left_up && this.inputState.action == Action.pad:
+        // if the distance traveled is less than 10, select a new pict
+        if distance(this.inputState.downMouseX, this.inputState.downMouseY, ev.x, ev.y) < 10:
+        | block:
+            let new_selected:
+              find_clicked_pict(current_rendered.selected_slide, ev, this.ui.selected)
+            println("new selected: " +& new_selected)
+            if new_selected:
+            | this with (ui = (this.ui with (selected = new_selected.metadata()["GlidePictIdentity"])))
+            | this with (ui = (this.ui with (selected = #false)))
+        | block:
+            // replace code with the newest code_with_action()
+            let updated = this.code_with_action()
+            this with (code = updated)
     | ~else: this
+
+  method mouse_released(ev):
+    if ev.kind == gui.MouseEvent.Kind.left_up:
+    | let new_input_state = this.inputState with (action = Action.none)
+      this with (inputState = new_input_state)
+    | this
 
   method update_input_state(ev):
     let new_input_state = this.inputState with (currentX = ev.x, currentY = ev.y)
@@ -117,23 +123,27 @@ class Glide(inputState, code, old_code, srcloc, ui):
   method with_selected_tab(selected_tab):
     this with (ui = (this.ui with (selected_tab = selected_tab)))
 
-  method update_ui_slide_button(ev, tabs_pict, current_rendered):
+  method ui_slide_button_start(ev, tabs_pict, current_rendered):
     let current_tab = this.ui.tabs[this.ui.selected_tab]
     if ev.kind == gui.MouseEvent.Kind.left_down:
-    | block:
-        let clicked:
-          for any:
-            each:
-              pict in tabs_pict.slide_buttons
-              i in 0..
-            if is_pict_clicked(tabs_pict.pict, pict, ev)
-            | i
-            | #false
-        if clicked:
-        | this.with_slide_index(SlideIndex(this.ui.selected_tab, clicked))
-        | if is_pict_clicked(tabs_pict.pict, tabs_pict.plus_button, ev)
-          | this.with_slide_index(SlideIndex(this.ui.selected_tab, current_rendered.tabs.last.length())).add_new_slide()
-          | this
+    | let clicked:
+        for any:
+          each:
+            pict in tabs_pict.slide_buttons
+            i in 0..
+          if is_pict_clicked(tabs_pict.pict, pict, ev)
+          | i
+          | #false
+      if clicked:
+      | this with (inputState = InputState(Action.slidedrag, ev.x, ev.y, ev.x, ev.y, SlideDrag(this.ui.selected_tab, clicked)))
+      | if is_pict_clicked(tabs_pict.pict, tabs_pict.plus_button, ev)
+        | this.with_slide_index(SlideIndex(this.ui.selected_tab, current_rendered.tabs.last.length())).add_new_slide()
+        | this
+    | this
+
+  method ui_slide_button_end(ev, tabs_pict, current_rendered):
+    if ev.kind == gui.MouseEvent.Kind.left_up && this.inputState.action == Action.slidedrag:
+    | this.with_slide_index(SlideIndex(this.inputState.action_data.tab_index, this.inputState.action_data.slide_index))
     | this
 
   method update_ui_tab_button(ev, tabs_pict, current_rendered):
@@ -152,19 +162,20 @@ class Glide(inputState, code, old_code, srcloc, ui):
         | this
     | this
 
-  // handle events having to do with the tabs
-  method handle_tab_event(ev, current_rendered, canvas_size):
-    // render the tabs as a pict
-    let tabs_pict = this.ui.tabs_pict(canvas_size, current_rendered)
-    this.update_ui_slide_button(ev, tabs_pict, current_rendered).update_ui_tab_button(ev, tabs_pict, current_rendered)
-
   method on_mouse(ev, canvas_size):
     let updated = this.update_input_state(ev)
     let current_rendered:
       updated.current_rendered(canvas_size)
+
+    let tabs_pict = updated.ui.tabs_pict(canvas_size, current_rendered)
   
     let with_input:
-      updated.pad_action_start(current_rendered, ev).pad_action_end(current_rendered, ev).handle_tab_event(ev, current_rendered, canvas_size)
+      updated
+        .pad_action_start(current_rendered, ev)
+        .pad_action_end(current_rendered, ev)
+        .ui_slide_button_start(ev, tabs_pict, current_rendered)
+        .ui_slide_button_end(ev, tabs_pict, current_rendered)
+        .mouse_released(ev)
 
     with_input
 
