@@ -115,7 +115,7 @@ class Glide(inputState, code, old_code, srcloc, ui):
     this with (inputState = new_input_state)
 
   method with_slide_index(slide_index):
-    this with (ui = (this.ui with (current_slide_index = slide_index))) 
+    this with (ui = (this.ui with (current_slide_index = slide_index)))
   
   method with_selected_tab(selected_tab):
     this with (ui = (this.ui with (selected_tab = selected_tab)))

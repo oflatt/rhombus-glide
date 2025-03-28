@@ -5,6 +5,8 @@ import:
   pict open
   pict/text open
   pict/rhombus open
+  draw expose:
+    Font
   gui expose:
     ~>
     <~
@@ -45,7 +47,7 @@ fun mini_slide(pict):
 class Tab(scrollBarPos):
   method pict(canvas_size, picts, tab_screen_width):
     let mini_slide_size = tab_screen_width * 0.8 * canvas_size.width
-    let plus_slide = scale_to_width(mini_slide(text("+")), mini_slide_size)
+    let plus_slide = scale_to_width(mini_slide(text("+", ~font: Font(~size: 80))), mini_slide_size)
 
     let combined:
       for values(res = nothing):
@@ -71,11 +73,16 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
     if this.selected:
     | block:
         let selected_pict = find_pict_from_gpi(current_rendered.selected_slide, this.selected)
-        let (x, y) = Find(selected_pict, ~horiz: #'left, ~vert: #'top).in(current_rendered.selected_slide)
-        let width = selected_pict.width
-        let height = selected_pict.height
-        println("drawing selected")
-        rectangle(~width: width, ~height: height, ~fill: #false, ~line: "blue", ~line_width: 4).pad(~left: x, ~top: y).draw(dx)
+        if selected_pict:
+        | let (x, y) = Find(selected_pict, ~horiz: #'left, ~vert: #'top).maybe_in(current_rendered.selected_slide)
+          let (x2, y2) = Find(selected_pict, ~horiz: #'right, ~vert: #'bottom).maybe_in(current_rendered.selected_slide)
+          if x:
+          | let width = x2 - x
+            let height = y2 - y
+            println("drawing selected")
+            rectangle(~width: width, ~height: height, ~fill: #false, ~line: "blue", ~line_width: 4).pad(~left: x, ~top: y).draw(dx)
+          | #false
+        | #false
     | #false
 
     // todo draw selected tab
