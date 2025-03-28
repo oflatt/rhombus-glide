@@ -289,20 +289,6 @@ fun new_slide_ref(code, new_name, selected_tab):
   | ~else: error("new_slide_ref: expected glide program")
 
 
-// returns stx, but whereever it finds a glide call,
-// it wraps it in a GPI__ call with a fresh number
-fun add_pict_identities(stx) :: Syntax:
-  def mutable current_id = 0
-  traverse_stx(stx,
-               fun (stx):
-                 if is_glide_call(stx):
-                 | block:
-                     let current = current_id
-                     current_id := current_id + 1
-                     Syntax.relocate_group(
-                       'GPI__($stx, $current)',
-                       stx)
-                 | stx)
 
 fun remove_pict_identities(stx):
   traverse_stx(stx,
@@ -312,8 +298,43 @@ fun remove_pict_identities(stx):
                      pict
                  | _: stx)
 
-fun is_glide_call(stx):
+
+fun traverse_funcs(stx, f):
+  match stx:
+  | '$func
+     ...
+     let tabs:
+      $tabs
+     let slides:
+      $slides':
+        let funcs:
+          '$func
+           ...'
+        let new_funcs = traverse_stx(funcs, f)
+        '$new_funcs
+         let tabs:
+           $tabs
+         let slides:
+           $slides'
+  | _: error("traverse_funcs: glide expects a sequence of functions, with slides at the end")
+
+
+// returns stx, but whereever it finds a glide call,
+// it wraps it in a GPI__ call with a fresh number
+fun add_pict_identities(stx) :: Syntax:
+  def mutable current_id = 0
+  traverse_funcs(stx,
+                 fun (stx):
+                   if is_pict_returner(stx):
+                   | block:
+                       let current = current_id
+                       current_id := current_id + 1
+                       'GPI__($stx, $current)'
+                   | stx)
+
+
+fun is_pict_returner(stx):
   match stx:
   | '$name($args, ...)':
-      name.to_source_string() == "rectangle" || name.to_source_string() == "beside"
+      eval('$name is_a (~any) -> Pict')
   | _: #false

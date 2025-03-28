@@ -3,9 +3,6 @@
 
 import:
   rhombus/meta open
-  pict open
-  pict/text open
-  pict/rhombus open
   rhombus/measure
   rhombus/runtime_path
   rhombus/fixnum expose:

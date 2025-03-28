@@ -1,10 +1,14 @@
 #lang rhombus
 
 import:
-  pict open
+  pict as pict
+  rhombus/meta open
 
 export:
   all_defined
 
-fun bubble():
-  rectangle()
+fun bubble(~width: width = 100, ~height: height = 100, ~text: text = "text"):
+  pict.overlay(pict.rectangle(~width: width, ~height: height, ~fill: "blue", ~line: "black", ~line_width: 3),
+               pict.text(text))
+
+

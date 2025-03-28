@@ -1,15 +1,15 @@
 #lang rhombus
 
 import:
-  glide open
   pict open
+  glide open
 
 glide { "todo configurations here" : 2}:
   fun main():
-    beside(~sep: 100, rectangle(~width: 100), pad(pad(rectangle(), 55, 54), -4, 11))
+    beside(~sep: 100, bubble(~width: 100), bubble())
   
   fun other():
-    rectangle()
+    bubble()
   
   fun slide0():
     nothing

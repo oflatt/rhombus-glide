@@ -3,9 +3,7 @@
 
 import:
   rhombus/meta open
-  pict open
-  pict/text open
-  pict/rhombus open
+  pict as pict
   rhombus/measure
   rhombus/runtime_path
   rhombus/fixnum expose:
@@ -42,10 +40,10 @@ fun draw_for(state):
   draw
   
 fun save_icon():
-  overlay(
-    rectangle(~width: 50, ~height: 50, ~fill: "gray", ~line: "black", ~line_width: 3),
-    stack(text("save"),
-          text("ctrl+s"))
+  pict.overlay(
+    pict.rectangle(~width: 50, ~height: 50, ~fill: "gray", ~line: "black", ~line_width: 3),
+    pict.stack(pict.text("save"),
+               pict.text("ctrl+s"))
   )
 
 
@@ -76,10 +74,15 @@ fun edit_slide(stx, config_stx):
   let win = gui.Window(gui.Canvas(state, draw_for(state), ~mouse: on_mousefor(state), ~key: onkeyfor(state)), ~size: [initialScreenW, initialScreenH])
   gui.render(win)
 
-
 meta:
+  import:
+    "stx_helpers.rhm" open
+    "traverse_rhombus.rhm" open
+    "elements.rhm" open
+
   fun glide(syntax, config):
     '«edit_slide('$(syntax)', '$(config)')»'
+
 
 defn.macro 'glide $config:
               $stx':
