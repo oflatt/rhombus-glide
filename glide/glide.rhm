@@ -1,0 +1,228 @@
+#lang rhombus
+
+
+import:
+  rhombus/meta open
+  pict open
+  pict/text open
+  pict/rhombus open
+  rhombus/measure
+  rhombus/runtime_path
+  rhombus/fixnum expose:
+    - as fm
+  gui expose:
+    ~>
+    <~
+  "traverse_rhombus.rhm" open
+  "ui.rhm" open
+  "stx_helpers.rhm" open
+  "wrap_stx.rhm" open
+  "elements.rhm" open
+
+export:
+  Glide
+  InputState
+  Action
+  pad
+  draw_slide
+  scale_to_fit
+  all_from("elements.rhm")
+
+enum Action:
+  pad
+  none
+
+class InputState(action, downMouseX, downMouseY, currentX, currentY)
+
+fun distance(x1, y1, x2, y2):
+  math.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2))
+
+// screen is a pict for the current screen
+// tabs is a list of lists
+// each list contains picts for the tab
+class Rendered(selected_slide, tabs)
+
+
+// inputState is an InputState object
+// code is the current code for the body of the function
+// old_code is the code that we loaded in from the file
+// ui is a UI object
+class Glide(inputState, code, old_code, srcloc, ui):
+  method code_with_action() :: Syntax:
+    if this.inputState.action == Action.pad:
+    | block:
+        cond 
+        | distance(this.inputState.downMouseX, this.inputState.downMouseY, this.inputState.currentX, this.inputState.currentY) < 10:
+            this.code
+        | ~else:
+            add_padding_to(this.code, this.ui.selected, this.inputState.currentX - this.inputState.downMouseX, this.inputState.currentY - this.inputState.downMouseY)
+    | this.code
+
+  method current_rendered(canvas_size) :: Rendered:
+    let code = this.code_with_action()
+    let slides = get_slides(code)
+    let tabs = get_tabs(code)
+    let room_for_tabs = canvas_size.width * ui.tab_screen_width
+    let room_for_slides = canvas_size.width - room_for_tabs
+
+    // TODO don't evaluate slides and tabs multiple times like we do here
+    let tabs:
+      eval('block:
+              $(code)
+              $tabs ++ [$slides]')
+    
+    let slide:
+      scale_to_fit(
+        draw_inset_slide(tabs[this.ui.current_slide_index.tab][this.ui.current_slide_index.index]),
+        [room_for_slides, canvas_size.height])
+        .pad(~left: room_for_tabs)
+    Rendered(slide, tabs)
+
+  method pad_action_start(current_rendered, ev):
+    cond
+    | ev.kind == gui.MouseEvent.Kind.left_down:
+        // if we're clicking an already selected pict
+        let selected = find_pict_from_gpi(current_rendered.selected_slide, this.ui.selected)
+        if is_pict_clicked(current_rendered.selected_slide, selected, ev):
+        | this with (inputState = InputState(Action.pad, ev.x, ev.y, ev.x, ev.y))
+        | this with (inputState = InputState(Action.none, ev.x, ev.y, ev.x, ev.y))
+    | ~else: this
+
+  method pad_action_end_release(current_rendered, ev):
+    // if the distance traveled is less than 10, select a new pict
+    if distance(this.inputState.downMouseX, this.inputState.downMouseY, ev.x, ev.y) < 10:
+    | block:
+        let new_selected:
+          find_clicked_pict(current_rendered.selected_slide, ev, this.ui.selected)
+        println("new selected: " +& new_selected)
+        if new_selected:
+        | this with (ui = (this.ui with (selected = new_selected.metadata()["GlidePictIdentity"])))
+        | this with (ui = (this.ui with (selected = #false)))
+    | block:
+        // replace code with the newest code_with_action()
+        let updated = this.code_with_action()
+        this with (code = updated)
+
+  method pad_action_end(current_rendered, ev):
+    cond
+    | ev.kind == gui.MouseEvent.Kind.left_up:
+        let new_input_state = this.inputState with (action = Action.none)
+        this.pad_action_end_release(current_rendered, ev) with (inputState = new_input_state)
+    | ~else: this
+
+  method update_input_state(ev):
+    let new_input_state = this.inputState with (currentX = ev.x, currentY = ev.y)
+    this with (inputState = new_input_state)
+
+  method with_slide_index(slide_index):
+    this with (ui = (this.ui with (current_slide_index = slide_index))) 
+  
+  method with_selected_tab(selected_tab):
+    this with (ui = (this.ui with (selected_tab = selected_tab)))
+
+  method update_ui_slide_button(ev, tabs_pict, current_rendered):
+    let current_tab = this.ui.tabs[this.ui.selected_tab]
+    if ev.kind == gui.MouseEvent.Kind.left_down:
+    | block:
+        let clicked:
+          for any:
+            each:
+              pict in tabs_pict.slide_buttons
+              i in 0..
+            if is_pict_clicked(tabs_pict.pict, pict, ev)
+            | i
+            | #false
+        if clicked:
+        | this.with_slide_index(SlideIndex(this.ui.selected_tab, clicked))
+        | if is_pict_clicked(tabs_pict.pict, tabs_pict.plus_button, ev)
+          | this.with_slide_index(SlideIndex(this.ui.selected_tab, current_rendered.tabs.last.length())).add_new_slide()
+          | this
+    | this
+
+  method update_ui_tab_button(ev, tabs_pict, current_rendered):
+    if ev.kind == gui.MouseEvent.Kind.left_down:
+    | block:
+        let clicked:
+          for any:
+            each:
+              pict in tabs_pict.tab_buttons
+              i in 0..
+            if is_pict_clicked(tabs_pict.pict, pict, ev)
+            | i
+            | #false
+        if clicked:
+        | this.with_selected_tab(clicked)
+        | this
+    | this
+
+  // handle events having to do with the tabs
+  method handle_tab_event(ev, current_rendered, canvas_size):
+    // render the tabs as a pict
+    let tabs_pict = this.ui.tabs_pict(canvas_size, current_rendered)
+    this.update_ui_slide_button(ev, tabs_pict, current_rendered).update_ui_tab_button(ev, tabs_pict, current_rendered)
+
+  method on_mouse(ev, canvas_size):
+    let updated = this.update_input_state(ev)
+    let current_rendered:
+      updated.current_rendered(canvas_size)
+  
+    let with_input:
+      updated.pad_action_start(current_rendered, ev).pad_action_end(current_rendered, ev).handle_tab_event(ev, current_rendered, canvas_size)
+
+    with_input
+
+  method onkey(ev):
+    let with_save = if ev.code == Char"s" && gui.KeyEvent.Down.control in ev.downs:
+    | do_save(this)
+    | this
+
+    if gui.KeyEvent.Key.escape == ev.code:
+    | with_save with (ui = (with_save.ui with (selected = #false)))
+    | with_save
+
+  method add_new_slide():
+    let fresh_slide_name = get_fresh_slide_name(this.code)
+
+    let new_code = new_slide_ref(add_new_func(this.code, fresh_slide_name), fresh_slide_name, this.ui.selected_tab)
+    this with (code = new_code)
+
+
+
+fun repeat_str(str, amt):
+  def mutable res = ""
+  for (i in 0..amt):
+    res := res +& str
+  res
+
+fun indent(code, amt):
+  let lines = String.split(code, "\n")
+  let indented = (for List:
+                    each line in lines
+                    repeat_str(" ", amt) +& line)
+  String.join(indented, "\n")
+
+
+// todo why all these constants? no idea
+fun do_save(glide):
+  let srcloc = glide.srcloc
+  
+  let source = filesystem.read_string(srcloc.source)
+  let before = String.substring(source, 0, srcloc.position-3)
+  let after:
+    if srcloc.position + srcloc.span >= String.length(source)
+    | ""
+    | String.substring(source, srcloc.position + srcloc.span-1, String.length(source))
+
+  let identities_removed = remove_pict_identities(glide.code)
+  let new_middle = indent(identities_removed.to_source_string(), 2)
+
+  let new_source = before +& new_middle +& after
+  
+  println("saving to: " +& srcloc.source)
+  filesystem.write_string(srcloc.source, new_source, ~exists: #'replace)
+
+  // now update the srcloc of the glide's code
+  let new_src_loc = Srcloc(srcloc.source, srcloc.line, srcloc.column, srcloc.position, String.length(new_middle)-2)
+  glide with (old_code = glide.code, srcloc = new_src_loc)
+
+
