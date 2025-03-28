@@ -31,6 +31,12 @@ fun scale_to_width(pict, width):
     pict.scale(scale)
   | pict
 
+fun scale_to_height(pict, height):
+  if pict.height > 0:
+  | let scale = height / pict.height
+    pict.scale(scale)
+  | pict
+
 fun draw_inset_slide(pict):
   let slide = draw_slide(pict)
   let grey_background = rectangle(~width: slide.width * 1.2, ~height: slide.height * 1.2, ~fill: "gray")
@@ -47,7 +53,8 @@ fun mini_slide(pict):
 class Tab(scrollBarPos):
   method pict(canvas_size, picts, tab_screen_width):
     let mini_slide_size = tab_screen_width * 0.8 * canvas_size.width
-    let plus_slide = scale_to_width(mini_slide(text("+", ~font: Font(~size: 80))), mini_slide_size)
+    let blank_mini = scale_to_width(mini_slide(nothing), mini_slide_size)
+    let plus_slide = overlay(blank_mini, scale_to_height(text("+"), blank_mini.height)) 
 
     let combined:
       for values(res = nothing):
