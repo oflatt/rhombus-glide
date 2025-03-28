@@ -69,6 +69,7 @@ fun edit_slide(stx, config_stx):
 
   let ui = UI(#false, eval(config_stx), config_stx, tabs, 0.15, num_tabs-1, SlideIndex(num_tabs-1, 0))
   let with_ids = add_pict_identities(stx)
+  println("with_ids: " +& with_ids.to_source_string())
   let state = gui.Obs(Glide(InputState(Action.none, 0, 0, 0, 0, #false), with_ids, with_ids, with_ids.srcloc(), ui))
 
   let win = gui.Window(gui.Canvas(state, draw_for(state), ~mouse: on_mousefor(state), ~key: onkeyfor(state)), ~size: [initialScreenW, initialScreenH])

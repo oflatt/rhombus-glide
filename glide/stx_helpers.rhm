@@ -41,14 +41,11 @@ fun is_pict_clicked(overallpict, pict, ev):
   | #false
   | let (x, y) = Find(pict, ~horiz: #'left, ~vert: #'top).in(overallpict)
     let (x2, y2) = Find(pict, ~horiz: #'right, ~vert: #'bottom).in(overallpict)
-    println("identity: " +& pict.metadata().get("GlidePictIdentity", #false))
-    println("x: " +& x +& " y: " +& y +& " x2: " +& x2 +& " y2: " +& y2)
     ev.x > x && ev.x < x2 && ev.y > y && ev.y < y2
 
 // recursively find a pict that was clicked, picking
 // a child if something is already selected
 fun find_clicked_pict(pict, clickev, current_selected):
-  println("pict: " +& pict)
   if current_selected:
   | block:
       let selected = find_pict_from_gpi(pict, current_selected)
@@ -65,7 +62,6 @@ fun find_first_clicked_pict(overall_pict, pict_children, click):
     each child in pict_children
     if is_glide_pict_clicked(overall_pict, child, click)
     | block:
-        println("found clicked pict")
         child
     | find_first_clicked_pict(overall_pict, child.children, click)
 
@@ -327,6 +323,8 @@ fun add_pict_identities(stx) :: Syntax:
                  fun (stx):
                    if is_pict_returner(stx):
                    | block:
+                       println("adding to GPI: ")
+                       println(stx.to_source_string())
                        let current = current_id
                        current_id := current_id + 1
                        'GPI__($stx, $current)'
@@ -336,5 +334,7 @@ fun add_pict_identities(stx) :: Syntax:
 fun is_pict_returner(stx):
   match stx:
   | '$name($args, ...)':
-      eval('$name is_a (~any) -> Pict')
+      if !(name.to_source_string() in ["GPI__"])
+      | eval('$name is_a (~any) -> Pict')
+      | #false
   | _: #false

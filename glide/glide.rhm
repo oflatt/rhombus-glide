@@ -84,6 +84,8 @@ class Glide(inputState, code, old_code, srcloc, ui):
     | ev.kind == gui.MouseEvent.Kind.left_down:
         // if we're clicking an already selected pict
         let selected = find_pict_from_gpi(current_rendered.selected_slide, this.ui.selected)
+        println(this.code.to_source_string())
+        println("selected: " +& selected)
         if is_pict_clicked(current_rendered.selected_slide, selected, ev):
         | this with (inputState = InputState(Action.pad, ev.x, ev.y, ev.x, ev.y, #false))
         | this with (inputState = InputState(Action.none, ev.x, ev.y, ev.x, ev.y, #false))

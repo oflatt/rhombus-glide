@@ -86,7 +86,6 @@ class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected
           if x:
           | let width = x2 - x
             let height = y2 - y
-            println("drawing selected")
             rectangle(~width: width, ~height: height, ~fill: #false, ~line: "blue", ~line_width: 4).pad(~left: x, ~top: y).draw(dx)
           | #false
         | #false
