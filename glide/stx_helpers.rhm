@@ -370,3 +370,11 @@ fun map_return_value(stx, func_name, f):
     | ~else: error("map_return_value: expected function")
   map_funcs(stx, handle_func)
 
+// use overlays to overlay code for a pict on the body of func_name
+fun overlay_pict_code(stx, func_name, pict_code, x, y):
+  fun add_to_return_value(body):
+    'overlays(
+      [$body, $0, $0],
+      [$pict_code, $x, $y],
+      )'
+  map_return_value(stx, func_name, add_to_return_value)
