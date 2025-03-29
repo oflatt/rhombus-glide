@@ -49,18 +49,31 @@ class Rendered(selected_slide, tabs)
 // old_code is the code that we loaded in from the file
 // ui is a UI object
 class Glide(inputState, code, old_code, srcloc, ui):
-  method code_with_action() :: Syntax:
-    if this.inputState.action == Action.pad:
-    | block:
+  method code_with_action(canvas_size) :: Syntax:
+    cond
+    | this.inputState.action == Action.pad:
         cond 
         | distance(this.inputState.downMouseX, this.inputState.downMouseY, this.inputState.currentX, this.inputState.currentY) < 10:
             this.code
         | ~else:
             add_padding_to(this.code, this.ui.selected, this.inputState.currentX - this.inputState.downMouseX, this.inputState.currentY - this.inputState.downMouseY)
-    | this.code
+    | this.inputState.action == Action.slidedrag:
+        let room_for_tabs = this.ui.tab_screen_width * canvas_size.width
+        cond
+        | distance(this.inputState.downMouseX, this.inputState.downMouseY, this.inputState.currentX, this.inputState.currentY) < 10:
+            this.code
+        | this.inputState.currentX > room_for_tabs:
+            let xpos = this.inputState.currentX - room_for_tabs
+            let ypos = this.inputState.currentY
+            let slide_func_name = get_slide_call_name(get_slide_stx(this.code, this.ui.current_slide_index.tab, this.ui.current_slide_index.index))
+            let dragged_stx = get_slide_stx(this.code, this.ui.selected_tab, this.inputState.action_data.slide_index)
+            overlay_pict_code(this.code, slide_func_name, dragged_stx, xpos, ypos)
+        | ~else:
+            this.code
+    | ~else: this.code
 
   method current_rendered(canvas_size) :: Rendered:
-    let code = this.code_with_action()
+    let code = this.code_with_action(canvas_size)
     let slides = get_slides(code)
     let tabs = get_tabs(code)
     let room_for_tabs = canvas_size.width * ui.tab_screen_width
@@ -91,7 +104,7 @@ class Glide(inputState, code, old_code, srcloc, ui):
         | this with (inputState = InputState(Action.none, ev.x, ev.y, ev.x, ev.y, #false))
     | ~else: this
 
-  method pad_action_end(current_rendered, ev):
+  method pad_action_end(current_rendered, ev, canvas_size):
     cond
     | ev.kind == gui.MouseEvent.Kind.left_up && this.inputState.action == Action.pad:
         // if the distance traveled is less than 10, select a new pict
@@ -105,7 +118,7 @@ class Glide(inputState, code, old_code, srcloc, ui):
             | this with (ui = (this.ui with (selected = #false)))
         | block:
             // replace code with the newest code_with_action()
-            let updated = this.code_with_action()
+            let updated = this.code_with_action(canvas_size)
             this with (code = updated)
     | ~else: this
 
@@ -143,9 +156,13 @@ class Glide(inputState, code, old_code, srcloc, ui):
         | this
     | this
 
-  method ui_slide_button_end(ev, tabs_pict, current_rendered):
+  method ui_slide_button_end(ev, tabs_pict, current_rendered, canvas_size):
     if ev.kind == gui.MouseEvent.Kind.left_up && this.inputState.action == Action.slidedrag:
-    | this.with_slide_index(SlideIndex(this.inputState.action_data.tab_index, this.inputState.action_data.slide_index))
+    | if distance(this.inputState.downMouseX, this.inputState.downMouseY, ev.x, ev.y) < 10:
+      | this.with_slide_index(SlideIndex(this.inputState.action_data.tab_index, this.inputState.action_data.slide_index))
+      | // replace code with the newest code_with_action(canvas_size)
+        let updated = this.code_with_action(canvas_size)
+        this with (code = updated)
     | this
 
   method update_ui_tab_button(ev, tabs_pict, current_rendered):
@@ -174,9 +191,9 @@ class Glide(inputState, code, old_code, srcloc, ui):
     let with_input:
       updated
         .pad_action_start(current_rendered, ev)
-        .pad_action_end(current_rendered, ev)
+        .pad_action_end(current_rendered, ev, canvas_size)
         .ui_slide_button_start(ev, tabs_pict, current_rendered)
-        .ui_slide_button_end(ev, tabs_pict, current_rendered)
+        .ui_slide_button_end(ev, tabs_pict, current_rendered, canvas_size)
         .mouse_released(ev)
 
     with_input
