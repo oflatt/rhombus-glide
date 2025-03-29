@@ -160,6 +160,23 @@ fun get_funcs(stx):
        ...]
   | _: error("get_funcs: invalid glide program. Expected sequence of functions, then tabs:, then slides:")
 
+fun map_funcs(stx, f):
+  match stx:
+  | '$func
+     ...
+     let tabs:
+      $tabs
+     let slides:
+      $slides':
+      let [new_func, ...] = [f(func), ...]
+      '$new_func
+       ...
+       let tabs:
+         $tabs
+       let slides:
+         $slides'
+  | _: error("map_funcs: invalid glide program. Expected sequence of functions, then tabs:, then slides:")
+
 fun stx_to_list(stx):
   match stx:
   | '[$expr, ...]':
@@ -314,7 +331,6 @@ fun traverse_funcs(stx, f):
            $slides'
   | _: error("traverse_funcs: glide expects a sequence of functions, with slides at the end")
 
-
 // returns stx, but whereever it finds a glide call,
 // it wraps it in a GPI__ call with a fresh number
 fun add_pict_identities(stx) :: Syntax:
@@ -338,3 +354,18 @@ fun is_pict_returner(stx):
       | eval('$name is_a (~any) -> Pict')
       | #false
   | _: #false
+
+fun map_return_value(stx, func_name, f):
+  fun handle_func(func):
+    match func:
+    | 'fun $name($arg, ...):
+        $body':
+        if name.to_source_string() == func_name
+        | block:
+            let new_body = f(body)
+            'fun $name($arg, ...):
+              $new_body'
+        | func
+    | ~else: error("map_return_value: expected function")
+  map_funcs(stx, handle_func)
+  
