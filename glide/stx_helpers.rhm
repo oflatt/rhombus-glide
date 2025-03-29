@@ -350,7 +350,8 @@ fun add_pict_identities(stx) :: Syntax:
 fun is_pict_returner(stx):
   match stx:
   | '$name($args, ...)':
-      if !(name.to_source_string() in ["GPI__"])
+      // exclude GPI and overlays so they are not selectable
+      if !(name.to_source_string() in ["GPI__", "overlays"])
       | eval('$name is_a (~any) -> Pict')
       | #false
   | _: #false
@@ -368,4 +369,4 @@ fun map_return_value(stx, func_name, f):
         | func
     | ~else: error("map_return_value: expected function")
   map_funcs(stx, handle_func)
-  
+

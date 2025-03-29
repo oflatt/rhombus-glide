@@ -12,3 +12,20 @@ fun bubble(~width: width = 100, ~height: height = 100, ~text: text = "text"):
                pict.text(text))
 
 
+
+fun overlays(pict_and_pos, ...):
+  match [pict_and_pos, ...]
+  | [rest, ..., [pict, x, y]]:
+      pict.overlay(overlays([rest, ...]),
+                   pict,
+                   ~dx: x,
+                   ~dy: y)
+  | [[pict, x, y]]:
+     pict.overlay(pict.nothing,
+                  pict,
+                  ~dx: x,
+                  ~dy: y)
+  | []:
+     pict.nothing
+  | ~else:
+     error("not a pict_and_pos: " +& [pict_and_pos, ...])
