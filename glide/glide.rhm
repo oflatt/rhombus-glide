@@ -63,13 +63,12 @@ class Glide(inputState, code, old_code, srcloc, ui):
         | distance(this.inputState.downMouseX, this.inputState.downMouseY, this.inputState.currentX, this.inputState.currentY) < 10:
             this.code
         | this.inputState.currentX > room_for_tabs:
-            //let xpos = this.inputState.currentX - room_for_tabs
-            //let ypos = this.inputState.currentY
-            let xpos = 20
-            let ypos = 20
+            let xpos = this.inputState.currentX - room_for_tabs
+            let ypos = this.inputState.currentY
             let slide_func_name = get_slide_call_name(get_slide_stx(this.code, this.ui.current_slide_index.tab, this.ui.current_slide_index.index))
             let dragged_stx = get_slide_stx(this.code, this.ui.selected_tab, this.inputState.action_data.slide_index)
-            overlay_pict_code(this.code, slide_func_name, dragged_stx, xpos, ypos)
+            let res = overlay_pict_code(this.code, slide_func_name, dragged_stx, xpos, ypos)
+            res
         | ~else:
             this.code
     | ~else: this.code

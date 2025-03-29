@@ -15,14 +15,14 @@ fun bubble(~width: width = 100, ~height: height = 100, ~text: text = "text"):
 
 fun overlays(pict_and_pos, ...):
   match [pict_and_pos, ...]
-  | [rest, ..., [pict, x, y]]:
-      pict.overlay(overlays([rest, ...]),
-                   pict,
+  | [rest, ..., [lastp, x, y]]:
+      pict.overlay(overlays(rest, ...),
+                   lastp,
                    ~dx: x,
                    ~dy: y)
-  | [[pict, x, y]]:
+  | [[lastp, x, y]]:
      pict.overlay(pict.nothing,
-                  pict,
+                  lastp,
                   ~dx: x,
                   ~dy: y)
   | []:

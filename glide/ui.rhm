@@ -75,6 +75,9 @@ class SlideIndex(tab, index)
 
 // INVARIANT: number of tabs is the same as number
 // of tabs in code, plus one for the slides
+// selected: the glide id of the currently selected pict on screen
+// current_slide_index: the SlideIndex of the on screen slide being edited
+// selected_tab: the index of the tab that is currently selected on the left
 class UI(selected, config, original_config_stx, tabs, tab_screen_width, selected_tab, current_slide_index):
   method draw(dx, inputState, current_rendered):
     if this.selected:
