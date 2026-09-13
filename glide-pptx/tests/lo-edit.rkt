@@ -43,9 +43,10 @@
 (define (mm100 pt) (inexact->exact (round (* pt 2540/72))))
 
 ;; The macro. It reads a job file -- one tab-separated command a line -- and
-;; does to the document what the file says. Named shapes: a tagged element is
-;; written with its tag as the shape's name, so the tag is what the job asks
-;; for.
+;; does to the document what the file says. Glide writes the tag into the
+;; description and a readable name into the object list. LibreOffice discards
+;; the description of groups, so the test driver accepts the readable suffix
+;; of an automatic tag too; exported names are unique within each slide.
 (define glide-edit-basic #<<BASIC
 Dim gDoc As Object
 Dim gLog As String
@@ -77,13 +78,22 @@ Function ShapeOf(slide As Integer, name As String) As Object
   ShapeOf = ShapeIn(gDoc.DrawPages.getByIndex(slide - 1), name)
 End Function
 
+Function HasName(sh As Object, name As String) As Boolean
+  HasName = (sh.Name = name Or sh.Description = "glide-pptx:" & name)
+  ' source: plus forty hexadecimal digits is the stable key. What follows its
+  ' next colon is only the readable object-list name.
+  If Not HasName And Left(name, 7) = "source:" And Len(name) > 48 Then
+    If Mid(name, 48, 1) = ":" Then HasName = (sh.Name = Mid(name, 49))
+  End If
+End Function
+
 ' What holds the shape, which is the page or the group it is in: a child is
 ' removed from its group, and asking the page to remove it does nothing at all.
 Function HolderOf(where As Object, name As String) As Object
   Dim i As Integer, sh As Object, inner As Object
   For i = 0 To where.Count - 1
     sh = where.getByIndex(i)
-    If sh.Name = name Or sh.Description = "glide-pptx:" & name Then
+    If HasName(sh, name) Then
       HolderOf = where
       Exit Function
     End If
@@ -101,7 +111,7 @@ Function ShapeIn(where As Object, name As String) As Object
   Dim i As Integer, sh As Object, inner As Object
   For i = 0 To where.Count - 1
     sh = where.getByIndex(i)
-    If sh.Name = name Or sh.Description = "glide-pptx:" & name Then
+    If HasName(sh, name) Then
       ShapeIn = sh
       Exit Function
     End If
@@ -352,6 +362,16 @@ BASIC
 (define (applied-kinds r)
   (for/list ([a (in-list (sync-report-applied r))]) (sync-action-kind a)))
 
+(define (actionable-actions r)
+  (filter (lambda (a) (not (eq? 'noted (sync-action-kind a))))
+          (sync-report-actions r)))
+
+(define (print-settle-actions r)
+  (for ([a (in-list (sync-report-actions r))])
+    (printf "     ~a: ~a ~s on slide ~a\n"
+            (if (eq? 'noted (sync-action-kind a)) "informational" "unsettled")
+            (sync-action-kind a) (sync-action-tag a) (sync-action-slide a))))
+
 (define (edited-in-libreoffice name program dir)
   (define pptx (build-path dir "deck.pptx"))
   (define w (build-path dir "w"))
@@ -444,6 +464,7 @@ BASIC
         (list (list "addtext" slide (mm100 100) (mm100 100)
                     (mm100 200) (mm100 50) added))))
       (format "~a: LibreOffice saved the deck it was given" name))
+     (copy-file pptx (build-path dir "libreoffice-edited.pptx") #t)
      (define r (sync-once program pptx #:workdir w #:atomic? #t))
      (define kinds (applied-kinds r))
      (for ([sk (in-list (sync-report-skipped r))])
@@ -494,10 +515,8 @@ BASIC
      ;; say: the program draws the deck it was given, the new shape included.
      (picts->pptx (load-program-picts program) pptx)
      (define settled (sync-once program pptx #:workdir w #:atomic? #t))
-     (for ([a (in-list (sync-report-actions settled))])
-       (printf "     unsettled: ~a ~s on slide ~a\n" (sync-action-kind a)
-               (sync-action-tag a) (sync-action-slide a)))
-     (check-equal? (length (sync-report-actions settled)) 0
+     (print-settle-actions settled)
+     (check-equal? (length (actionable-actions settled)) 0
                    (format "~a: the deck written from the program has nothing to merge"
                            name))]))
 
@@ -545,9 +564,8 @@ BASIC
      ;; And it settles: the deck written from the program holds both of them.
      (picts->pptx (load-program-picts program) pptx)
      (define settled (sync-once program pptx #:workdir w #:atomic? #t))
-     (for ([a (in-list (sync-report-actions settled))])
-       (printf "     unsettled: ~a ~s\n" (sync-action-kind a) (sync-action-tag a)))
-     (check-equal? (length (sync-report-actions settled)) 0
+     (print-settle-actions settled)
+     (check-equal? (length (actionable-actions settled)) 0
                    (format "~a: the deck written from the program has nothing to merge"
                            name))]))
 
@@ -560,17 +578,35 @@ BASIC
 (define (added-everywhere name program dir)
   (define pptx (build-path dir "deck.pptx"))
   (define w (build-path dir "w"))
-  (define slides (length (load-program-picts program)))
-  (picts->pptx (load-program-picts program) pptx)
+  (define picts (load-program-picts program))
+  (define slides (length picts))
+  ;; In an epoch deck, exercise the last editable page of every logical slide.
+  ;; That reaches every source owner, including the `from_stage` write-back
+  ;; path, without asking for mutually inconsistent boxes on every cumulative
+  ;; frame of the same build.
+  (define origins (current-slide-origins))
+  (define target-pages
+    (if (getenv "GLIDE_LO_STAGES")
+        (for/list ([origin (in-list origins)] [i (in-naturals 1)]
+                   [next (in-list (append (cdr origins) '(#f)))]
+                   #:when (not (equal? origin next)))
+          i)
+        (for/list ([i (in-range 1 (add1 slides))]) i)))
+  (picts->pptx picts pptx)
   (void (sync-once program pptx #:workdir w))
   (define (typed i) (format "Drawn on slide ~a" i))
-  (printf "  ~a: a text box on each of ~a slides\n" name slides)
+  (printf "  ~a: a text box on ~a source slides across ~a editor pages\n"
+          name (length target-pages) slides)
   (check-true
    (libreoffice-edit!
     pptx
-    (for/list ([i (in-range 1 (add1 slides))])
+    (for/list ([i (in-list target-pages)])
       (list "addtext" i (mm100 60) (mm100 60) (mm100 220) (mm100 40) (typed i))))
    (format "~a: LibreOffice saved the deck it was given" name))
+  ;; Keep the editor's actual rewrite: if matching fails, the generated deck
+  ;; below intentionally replaces `pptx`, and losing the evidence makes a
+  ;; LibreOffice-only failure need another several-minute run to inspect.
+  (copy-file pptx (build-path dir "libreoffice-added.pptx") #t)
   (define r (sync-once program pptx #:workdir w #:atomic? #t))
   (define adds
     (for/list ([a (in-list (sync-report-applied r))]
@@ -579,9 +615,17 @@ BASIC
   (for ([sk (in-list (sync-report-skipped r))])
     (printf "     refused ~a ~s on slide ~a: ~a\n" (sync-action-kind (car sk))
             (sync-action-tag (car sk)) (sync-action-slide (car sk)) (cdr sk)))
-  (define text (file->string program))
+  ;; A hand-written talk can keep every canvas in an imported module. Check
+  ;; the whole editable source tree, not just its running-order file.
+  (define-values (_sites _scopes _slide-sites layout) (find-program-sites program))
+  (define text
+    (string-join
+     (for/list ([source (in-list (program-layout-files layout))]
+                #:when (file-exists? source))
+       (file->string source))
+     "\n"))
   (define missing
-    (for/list ([i (in-range 1 (add1 slides))]
+    (for/list ([i (in-list target-pages)]
                #:unless (string-contains? text (typed i)))
       i))
   ;; A slide a helper builds has no canvas of its own to add a form to, and says
@@ -592,7 +636,8 @@ BASIC
     (for/list ([sk (in-list (sync-report-skipped r))]
                #:when (regexp-match? #rx"slide-canvas" (cdr sk)))
       (sync-action-slide (car sk))))
-  (printf "     ~a of ~a landed~a\n" (- slides (length missing)) slides
+  (printf "     ~a of ~a landed~a\n" (- (length target-pages) (length missing))
+          (length target-pages)
           (if (null? missing)
               ""
               (format ", not on slide~a ~a~a" (if (= 1 (length missing)) "" "s")
@@ -602,15 +647,13 @@ BASIC
   (check-equal? (sort missing <) (sort (remove-duplicates no-canvas) <)
                 (format "~a: a box lands on every slide that has a canvas to hold it" name))
   (check-equal? (sort (remove-duplicates (append adds no-canvas)) <)
-                (for/list ([i (in-range 1 (add1 slides))]) i)
+                target-pages
                 (format "~a: and every slide either takes it or says why not" name))
   ;; And the deck written back from the program holds all of them.
   (picts->pptx (load-program-picts program) pptx)
   (define settled (sync-once program pptx #:workdir w #:atomic? #t))
-  (for ([a (in-list (sync-report-actions settled))])
-    (printf "     unsettled: ~a ~s on slide ~a\n" (sync-action-kind a)
-            (sync-action-tag a) (sync-action-slide a)))
-  (check-equal? (length (sync-report-actions settled)) 0
+  (print-settle-actions settled)
+  (check-equal? (length (actionable-actions settled)) 0
                 (format "~a: the deck written from the program has nothing to merge" name)))
 
 (define fixtures
@@ -658,6 +701,7 @@ BASIC
    ;; the answer is not obvious. `GLIDE_LO_PROGRAM` names it.
    (let ([mine (getenv "GLIDE_LO_PROGRAM")])
      (when mine
+       (when (getenv "GLIDE_LO_STAGES") (set-stage-slides! #t))
        (define from (path-only (path->complete-path mine)))
        (define dir (build-path work "local"))
        (make-directory* dir)
@@ -673,6 +717,9 @@ BASIC
        (define program (build-path dir (file-name-from-path mine)))
        (printf "your own program:\n")
        (added-everywhere (path->string (file-name-from-path mine)) program dir)
-       (edited-in-libreoffice (path->string (file-name-from-path mine)) program dir)))])
+       ;; Useful when validating a large real talk: the all-slides addition is
+       ;; independently valuable and need not pay for another export/edit pass.
+       (unless (equal? (getenv "GLIDE_LO_PROGRAM_MODE") "add")
+         (edited-in-libreoffice (path->string (file-name-from-path mine)) program dir))))])
 
 (module+ main (void (test-log #:display? #t #:exit? #t)))

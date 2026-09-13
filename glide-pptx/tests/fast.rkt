@@ -1,6 +1,8 @@
 #lang racket/base
-;; The suite that needs nothing but Racket: no LibreOffice to render against, no
-;; corpus to download. A few minutes, which is the one to run while working.
+;; The suite that needs no corpus. It also exercises actual LibreOffice saves,
+;; edits and live reloads when LibreOffice is installed; those checks announce
+;; that they were skipped on a Racket-only machine. A few minutes, which is the
+;; one to run while working.
 ;;
 ;; What it does cover is everything with an exact answer -- the round trip
 ;; through the IR, the sync, the fuzzer, the parser's own units -- so a

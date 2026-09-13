@@ -6,7 +6,8 @@
 ;; layout, and from there in the slide master. `shape-ctx` holds those two
 ;; lookups plus everything else the walk needs.
 (require racket/list racket/string
-         "xml-util.rkt" "units.rkt" "ir.rkt" "theme.rkt" "drawing.rkt" "text.rkt")
+         "xml-util.rkt" "units.rkt" "ir.rkt" "theme.rkt" "drawing.rkt" "text.rkt"
+         "source-tag.rkt")
 (provide (struct-out shape-ctx) make-shape-ctx
          parse-sp-tree
          placeholder-info
@@ -180,13 +181,19 @@
                  (xpath node 'nvCxnSpPr 'cNvPr) (xpath node 'nvGrpSpPr 'cNvPr)
                  (xpath node 'nvGraphicFramePr 'cNvPr)))
   (define descr (and nv (attr nv 'descr)))
+  (define name (and nv (attr nv 'name)))
   (define tag
-    (and descr (string-prefix? descr TAG-PREFIX)
-         (substring descr (string-length TAG-PREFIX))))
+    (or (and descr (string-prefix? descr TAG-PREFIX)
+             (substring descr (string-length TAG-PREFIX)))
+        ;; LibreOffice drops the description of groups and can drop it from a
+        ;; shape that it rebuilds, but it preserves the object name. Glide's
+        ;; own automatic protocol is recognizable without treating an ordinary
+        ;; user name such as `source:foo` as an identity.
+        (and (automatic-tag? name) name)))
   (when (and tag (current-tag-names))
     (hash-set! (current-tag-names) tag #t))
   (values (or (and nv (attr-num nv 'id)) 0)
-          (or tag (and nv (attr nv 'name)) "")))
+          (or tag name "")))
 
 ;; Geometry, walking up to the layout and master placeholder when the slide
 ;; shape states none.

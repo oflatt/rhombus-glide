@@ -27,7 +27,7 @@
 (provide (struct-out sync-action) (struct-out sync-report)
          program-slide-states deck-slide-states load-program-picts
          validate-program-picts! record-program-base!
-         set-stage-slides! ask-slide-numbers!
+         set-stage-slides! current-slide-origins ask-slide-numbers!
          match-elements merge-states
          apply-actions! sync-once
          find-at-sites find-program-sites program-source-files
@@ -136,6 +136,7 @@
 ;; one slide of the program -- which is what says where an edit made on the
 ;; third of them is to be written.
 (define slide-origins (box '()))
+(define (current-slide-origins) (unbox slide-origins))
 
 ;; The scope for each slide of the deck. One `all_slides` entry is one scope,
 ;; and with stages one entry is several slides; everything that writes an edit
@@ -376,7 +377,7 @@
   (define base-by-tag (by-tag base))
   (define used (make-hasheq))
   (define matched-now (make-hasheq))
-  (define pairs
+  (define tag-pairs
     (append*
      (for/list ([(tag ns) (in-hash (by-tag now))])
        (define bs (hash-ref base-by-tag tag '()))
@@ -385,23 +386,76 @@
        ;; base element and read as a move -- so the whole family goes to the
        ;; signature matcher, which pairs each survivor with itself and leaves the
        ;; missing one to be reported as missing.
-       (cond
-         [(= (length ns) (length bs))
+         (cond
+           [(= (length ns) (length bs))
           (for/list ([n (in-list ns)] [b (in-list bs)])
             (hash-set! used b #t)
             (hash-set! matched-now n #t)
             (cons n b))]
          [else '()]))))
+  ;; LibreOffice normally keeps our identity in `descr`, but drops it from a
+  ;; group and can drop it from a shape it reconstructs while editing. It does
+  ;; preserve the object-list name. Recover by that name, only from an untagged
+  ;; editor object of the same kind, and only when the name is unique and the
+  ;; size is still plausible. This also matters for objects a program draws
+  ;; without an `at`: a LibreOffice no-op can change their text metrics enough
+  ;; to defeat the signature matcher, but it leaves their names alone.
+  (define (recoverable-base-name b)
+    (or (and (el-state-tag b)
+             (or (automatic-tag-name (el-state-tag b))
+                 (and (not (automatic-tag? (el-state-tag b)))
+                      (el-state-tag b))))
+        (el-state-name b)))
+  (define (name-geometry-plausible? n b)
+    (or (eq? 'group (el-state-kind b))
+        (and (or (text-driven-size? b 'w)
+                 (< (abs (- (el-state-w n) (el-state-w b))) (* 0.05 size)))
+             (or (text-driven-size? b 'h)
+                 (< (abs (- (el-state-h n) (el-state-h b))) (* 0.05 size))))))
+  (define name-pairs
+    (filter
+     values
+     (for/list ([n (in-list now)]
+                #:when (and (not (hash-ref matched-now n #f))
+                            (not (el-state-tag n))
+                            (el-state-name n)))
+       (define name (el-state-name n))
+       (define candidates
+         (filter (lambda (b)
+                   (and (not (hash-ref used b #f))
+                        (eq? (el-state-kind n) (el-state-kind b))
+                        (equal? name (recoverable-base-name b))
+                        ;; LibreOffice can reuse a deleted object's name for a
+                        ;; newly drawn shape. Equal names alone are therefore
+                        ;; not enough; its size must still plausibly be the
+                        ;; same object. Position is deliberately free, because
+                        ;; detecting a drag is why matching exists.
+                        (name-geometry-plausible? n b)))
+                 base))
+       (define now-count
+         (count (lambda (other)
+                  (and (not (el-state-tag other))
+                       (eq? (el-state-kind n) (el-state-kind other))
+                       (equal? name (el-state-name other))))
+                now))
+       (cond
+         [(and (= 1 now-count) (= 1 (length candidates)))
+          (define b (first candidates))
+          (hash-set! used b #t)
+          (hash-set! matched-now n #t)
+          (cons n b)]
+         [else #f]))))
+  (define pairs (append tag-pairs name-pairs))
   (define rest-now (filter (lambda (n) (not (hash-ref matched-now n #f))) now))
   (define rest-base (filter (lambda (b) (not (hash-ref used b #f))) base))
   ;; Whether the editor kept our alt text -- asked of each kind on its own,
   ;; because an editor treats a kind consistently and treats the kinds
-  ;; differently. LibreOffice keeps it on a shape, on a text box and on a
-  ;; picture, and drops it on a group and on a connector. Asked once for the
-  ;; whole slide, a group that came back without its tag looked like a group
-  ;; that had been deleted, with a new one in its place: retyping a word inside
-  ;; a group reported the group deleted and a flattened copy added, and the
-  ;; retyping itself was lost.
+  ;; differently. LibreOffice usually keeps it on shapes and pictures, drops it
+  ;; on groups and connectors, and can drop every tag in a shape tree it has
+  ;; reconstructed. Asked once for the whole slide, a group that came back
+  ;; without its tag looked like a group that had been deleted, with a new one
+  ;; in its place: retyping a word inside a group reported the group deleted and
+  ;; a flattened copy added, and the retyping itself was lost.
   ;;
   ;; Where a kind's tags did come back, a tagged element must not be paired with
   ;; a shape the editor made itself. A new text box is not the box the same
@@ -432,9 +486,16 @@
   ;; program after every merge, and the shape added last time carries the tag of
   ;; the `at` form written for it.
   (define (limit-for n b)
-    (if (or (not (hash-ref kept-tags-of (el-state-kind b) #f))
-            (not (el-state-tag b))
-            (el-state-tag n))
+    (if (or (not (el-state-tag b))
+            (el-state-tag n)
+            ;; With no readable name there is no metadata left to consult, so
+            ;; a kind for which this editor strips all tags must still fall
+            ;; back to appearance. A named source object is different: the
+            ;; unique-name pass above already recovered it. Pairing another,
+            ;; nameless object to it by a loose signature would turn a delete
+            ;; plus an addition into a many-property edit of the deleted box.
+            (and (not (automatic-tag-name (el-state-tag b)))
+                 (not (hash-ref kept-tags-of (el-state-kind b) #f))))
         MATCH-LIMIT
         LOST-TAG-LIMIT))
   ;; Everything left is matched by how much it looks alike, best pair first.
@@ -562,7 +623,10 @@
 ;; compared, and only a size somebody really set is a resize.
 (define (text-driven-size? st which)
   (case (el-state-kind st)
-    [(text)
+    ;; DrawingML represents an ordinary inserted text box as a preset rectangle
+    ;; with a text body, so it is a `shape` state here. LibreOffice normalizes
+    ;; that rectangle on save exactly as it does a bare text state.
+    [(text shape)
      (let ([style (el-state-style st)])
        (case which
          ;; `wrap` stated false: the box does not hold the text to a width.
@@ -591,7 +655,27 @@
   (cond
     [(not (or w? h?)) st]
     [else
+     (define style (el-state-style like))
+     (define anchor (let ([p (assoc 'anchor style)]) (if p (cdr p) 'top)))
+     (define group? (eq? 'group (el-state-kind like)))
      (struct-copy el-state st
+                  ;; A non-wrapping auto-fit box changes x and width together,
+                  ;; preserving its horizontal centre. Compare that centre, so
+                  ;; LibreOffice's normalization is ignored but a real drag is
+                  ;; still a move.
+                  ;; A group is different: the editor derives its extent from
+                  ;; its children while keeping the top-left corner fixed.
+                  [x (if (and w? (not group?))
+                         (+ (el-state-x st) (/ (el-state-w st) 2.0))
+                         (el-state-x st))]
+                  ;; Vertically the text anchor is the point LibreOffice keeps
+                  ;; fixed while deriving the height.
+                  [y (if (and h? (not group?))
+                         (case anchor
+                           [(center) (+ (el-state-y st) (/ (el-state-h st) 2.0))]
+                           [(bottom) (+ (el-state-y st) (el-state-h st))]
+                           [else (el-state-y st)])
+                         (el-state-y st))]
                   [w (if w? 0.0 (el-state-w st))]
                   [h (if h? 0.0 (el-state-h st))])]))
 
@@ -894,21 +978,49 @@
     [else
      (define was (group-text-entries (el-state-text b)))
      (define now (group-text-entries (el-state-text d)))
+     ;; LibreOffice drops `descr`, including our source identity, from every
+     ;; child of a group. It does keep the child's display name. Pair an exact
+     ;; identity first, then use that readable suffix only when it is unique on
+     ;; both sides. The base tag remains the action's tag, since that is the
+     ;; source site that can actually be patched.
+     (define paired-was (make-hasheq))
+     (define paired-now (make-hasheq))
+     (define (pair! n w)
+       (hash-set! paired-now n w)
+       (hash-set! paired-was w n))
+     (for ([n (in-list now)])
+       (define exact
+         (filter (lambda (w)
+                   (and (not (hash-ref paired-was w #f))
+                        (equal? (tag-key (car n)) (tag-key (car w)))))
+                 was))
+       (when (= 1 (length exact)) (pair! n (first exact))))
+     (for ([n (in-list now)] #:unless (hash-ref paired-now n #f))
+       (define candidates
+         (filter (lambda (w)
+                   (and (not (hash-ref paired-was w #f))
+                        (let ([readable (automatic-tag-name (car w))])
+                          (and readable (string=? readable (car n))))))
+                 was))
+       (define same-name-now
+         (count (lambda (other) (string=? (car other) (car n))) now))
+       (when (and (= 1 (length candidates)) (= 1 same-name-now))
+         (pair! n (first candidates))))
      (append
       (for/list ([e (in-list now)]
-                 #:when (let ([old (assoc (car e) was)])
+                 #:when (let ([old (hash-ref paired-now e #f)])
                           (and old (not (string=? (cdr old) (cdr e))))))
-        (sync-action 'retext (car e) index (cdr e) #f))
+        (sync-action 'retext (car (hash-ref paired-now e)) index (cdr e) #f))
       ;; And one the group no longer holds. Deleting a shape inside a group is
       ;; an ordinary thing to do in an editor, and the `at` form that drew it is
       ;; there in the source to be taken out -- the group itself is not deleted,
       ;; so nothing else about the slide changes.
-      (for/list ([e (in-list was)] #:unless (assoc (car e) now))
+      (for/list ([e (in-list was)] #:unless (hash-ref paired-was e #f))
         (sync-action 'removed (car e) index (el-geometry b) #f))
       ;; One it holds that the program does not draw. Writing that means adding
       ;; a form inside the group's own form, which is a restructuring rather
       ;; than a literal edit -- so it is said and not done.
-      (for/list ([e (in-list now)] #:unless (assoc (car e) was))
+      (for/list ([e (in-list now)] #:unless (hash-ref paired-now e #f))
         (sync-action 'noted (car e) index
                      (string-append "it was drawn inside a group, and a shape cannot be"
                                     " added to a group from here")
@@ -988,11 +1100,17 @@
 (define SLIDE-MATCH 0.5)
 
 (define (slide-affinity a b)
-  (define ta (filter values (map (lambda (e) (tag-key (el-state-tag e)))
-                                 (slide-state-elements a))))
-  (define tb (filter values (map (lambda (e) (tag-key (el-state-tag e)))
-                                 (slide-state-elements b))))
-  (cond
+  ;; A generated object name is a weaker identity than an `at` tag, but it is
+  ;; still useful on a slide made wholly from raw drawing: LibreOffice keeps the
+  ;; names when it rewrites text metrics. Prefix the two namespaces so a user
+  ;; name can never collide with a source digest.
+  (define (token e)
+    (or (and (el-state-tag e) (string-append "tag:" (format "~a" (tag-key (el-state-tag e)))))
+        (and (el-state-name e) (string-append "name:" (el-state-name e)))))
+  (define ta (filter values (map token (slide-state-elements a))))
+  (define tb (filter values (map token (slide-state-elements b))))
+  (define score
+    (cond
     [(and (null? ta) (null? tb)) 1.0]
     ;; Everything on a slide can be deleted, or a slide can be filled from
     ;; empty. There are no tags to go on then, and the one thing left is where
@@ -1009,6 +1127,10 @@
              (values (add1 n) (hash-update h t sub1))
              (values n h))))
      (/ (* 2.0 shared) (+ (length ta) (length tb)))]))
+  ;; Identical divider slides can deliberately share every source site. When
+  ;; they have not been reordered, prefer the page already in this position;
+  ;; a genuine reorder still wins by its distinct fingerprint.
+  (+ score (if (= (slide-state-index a) (slide-state-index b)) 0.001 0.0)))
 
 ;; (values pairs added removed), pairs as (deck . base), in deck order.
 (define (match-slides base deck)
@@ -1373,21 +1495,33 @@
 
 ;; Where a new last argument goes in `call-name(...)`, given the position just
 ;; after the call's name.
-;; A new element is indented like the last one in the same slide. The default
-;; only applies to a slide that has none yet.
-(define (with-indents slide-sites sites text)
-  (for/list ([ss (in-list slide-sites)])
-    ;; Only the forms the canvas holds itself. An `at` inside a `group_pict` is
-    ;; written for its group and sits far to the right of anything the canvas
-    ;; would write, so a slide whose last element is a group would otherwise
-    ;; indent the next new one into the middle of it.
-    (define mine (canvas-forms (slide-site-scope ss) sites (slide-site-source ss)))
+;; A new element is indented like a direct argument of the canvas. Looking at
+;; every `at` in the surrounding definition is not enough: an animated slide
+;; commonly defines its base canvas and several deeply indented stage groups in
+;; one function, and the last `at` in that scope is not a child of the canvas.
+(define (canvas-argument-indent parens text [fallback 2])
+  (define (first-position s)
     (cond
-      [(null? mine) ss]
-      [else
-       (define start (rng-start (at-site-whole (argmax (lambda (s) (rng-start (at-site-whole s)))
-                                                       mine))))
-       (struct-copy slide-site ss [indent (indent-at text start)])])))
+      [(and (syntax? s) (range-of s)) => rng-start]
+      [(syntax? s) (first-position (syntax-e s))]
+      [(pair? s) (for/fold ([best #f]) ([part (in-list s)])
+                   (define p (first-position part))
+                   (cond [(not p) best] [(not best) p] [else (min best p)]))]
+      [else #f]))
+  (define starts
+    (filter values
+            (for/list ([arg (in-list (if parens (cdr (syntax-e parens)) '()))])
+              (first-position arg))))
+  (cond
+    [(null? starts) fallback]
+    [else
+     ;; Prefer an argument written on its own line. Its leading whitespace is
+     ;; precisely the indentation a newly appended sibling needs.
+     (or (for/first ([start (in-list (reverse starts))]
+                     #:when (regexp-match? #px"^[ \t]*$"
+                                           (substring text (line-start text start) start)))
+           (indent-at text start))
+         fallback)]))
 
 ;; The `at` forms one slide's canvas holds itself: those with its scope, less
 ;; the ones another of them encloses, which belong to a group and are drawn by
@@ -1657,7 +1791,7 @@
                              item
                              (struct-copy name-entry item [name scope])))])]))
     (values ordered scopes
-            (with-indents (rhombus-slide-sites groups text source) ordered text)
+            (rhombus-slide-sites groups text source)
             (program-layout traced-nl
                             (let ([ex (rhombus-export-block groups text)])
                               (if ex (hash source ex) (hash)))
@@ -1905,7 +2039,7 @@
                         [ins (and r (canvas-insertion text (rng-end r) rhombus-close))])
                    (and ins shut
                         (mask-slide-site-shared
-                         (slide-site scope (first ins) 2
+                         (slide-site scope (first ins) (canvas-argument-indent canvas-parens text)
                                      (let ([d (range-of (second l))]) (and d (rng-start d)))
                                      (or (group-end g) (add1 shut))
                                      (canvas-paint-site canvas-parens)
@@ -3939,12 +4073,17 @@
                                                                   (rng-source whole))))))))
                       (or (automatic-tag-name (at-site-tag st)) (at-site-tag st)))
                     (hash-ref claimed home-scope '())))
+          ;; A copy can retain the original's source tag in its description.
+          ;; Seed the new name from its readable suffix, not from the opaque
+          ;; source identity, so the copy cannot acquire that identity twice.
+          (define original-name
+            (or (automatic-tag-name (element-name e)) (element-name e)))
           (define named
-            (let loop ([n 2] [name (element-name e)])
+            (let loop ([n 2] [name original-name])
               (cond
                 [(not (member name taken)) (element-with-name e name)]
                 [(> n 99) (element-with-name e name)]
-                [else (loop (add1 n) (format "~a (~a)" (element-name e) n))])))
+                [else (loop (add1 n) (format "~a (~a)" original-name n))])))
           (hash-update! claimed home-scope
                         (lambda (ns) (cons (element-name named) ns)) '())
           (define src-text
@@ -4003,6 +4142,10 @@
              ;; `over` for a slide that has no canvas of its own, `from_stage`
              ;; for a stage after the first: the same layer, and the second one
              ;; waits.
+             ;; The entry lives in the running-order module even when the
+             ;; canvas is in an imported module. Its ranges must be sliced from
+             ;; that file, not from the last action's source file.
+             (define entry-text (source-text-for (rng-source entry)))
              (define inner-call
                (if (and stage (> stage 1)) (format "from_stage(~a, " stage) "over("))
              (define entry-item (entry-item-for (sync-action-slide a)))
@@ -4027,26 +4170,35 @@
              ;; no indentation a continuation could take that is not the next
              ;; entry's, which is a program that does not parse.
              (define col (- (rng-start entry)
-                            (line-start source-text (rng-start entry))))
+                            (line-start entry-text (rng-start entry))))
              (define alone?
                (and (regexp-match? #px"^[ \t]*$"
-                                   (substring source-text
-                                              (line-start source-text (rng-start entry))
+                                   (substring entry-text
+                                              (line-start entry-text (rng-start entry))
                                               (rng-start entry)))
                     (regexp-match? #px"^[ \t]*[,\\]]?[ \t]*(\n|$)"
-                                   (substring source-text (rng-end entry)
-                                              (min (string-length source-text)
+                                   (substring entry-text (rng-end entry)
+                                              (min (string-length entry-text)
                                                    (+ (rng-end entry) 40))))))
              (define layer
                (if alone?
-                   (rhombus-element-source named (+ col (string-length call))
+                   ;; Rhombus continuations align with the call's first
+                   ;; argument, not with the preceding argument. This element
+                   ;; is an argument of the innermost `over`/`from_stage`, past
+                   ;; any outer `show_as`/`show_only` prefix.
+                   (rhombus-element-source
+                    named (+ col
+                             (- (string-length call) (string-length inner-call))
+                             (if (and stage (> stage 1))
+                                 (string-length "from_stage(")
+                                 (string-length "over(")))
                                            #:media-names media-names
-                                           #:font (or (program-default-font source-text)
+                                           #:font (or (program-default-font entry-text)
                                                       (and d (dominant-font d)))
                                            #:identity-tags? #t)
                    (rhombus-element-source named 0
                                            #:media-names media-names
-                                           #:font (or (program-default-font source-text)
+                                           #:font (or (program-default-font entry-text)
                                                       (and d (dominant-font d)))
                                            #:width +inf.0
                                            #:comment? #f
@@ -4059,7 +4211,7 @@
              (edit! entry
                     (format (if alone? "~a~a,\n~a~a" "~a~a, ~a~a")
                             call
-                            (substring source-text (rng-start shown-entry) (rng-end shown-entry))
+                            (substring entry-text (rng-start shown-entry) (rng-end shown-entry))
                             layer
                             close))]
             [(and after (at-site-whole after))

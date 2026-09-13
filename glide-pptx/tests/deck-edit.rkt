@@ -76,7 +76,15 @@
   (define m (or (regexp-match-positions
                  (pregexp (format "descr=\"glide-pptx:~a\"" (regexp-quote tag))) d)
                 (regexp-match-positions
-                 (pregexp (format "name=\"~a\"" (regexp-quote tag))) d)))
+                 (pregexp (format "name=\"~a\"" (regexp-quote tag))) d)
+                ;; Tests often address an automatically tagged object by the
+                ;; readable suffix a user recognizes. LibreOffice-preserving
+                ;; exports carry the full generated identity in `name` too.
+                (regexp-match-positions
+                 (pregexp
+                  (format "(?:name=\"|descr=\"glide-pptx:)source:[0-9a-f]{40}:~a\""
+                          (regexp-quote tag)))
+                 d)))
   (and m (cdar m)))
 
 ;; The regexp that finds one tagged shape, which is how an editor's edits are
@@ -93,9 +101,10 @@
   (pregexp (format (string-append
                     "(?s:<p:(?:sp|pic|grpSp)>"
                     "(?:(?!<p:(?:sp|pic|grpSp)>)(?!</p:(?:sp|pic|grpSp)>).)*?"
-                    "(?:descr=\"glide-pptx:~a\"|name=\"~a\")"
+                    "(?:descr=\"glide-pptx:~a\"|name=\"~a\"|"
+                    "(?:descr=\"glide-pptx:|name=\")source:[0-9a-f]{40}:~a\")"
                     "(?:(?!</p:(?:sp|pic|grpSp)>).)*?</p:(?:sp|pic|grpSp)>)")
-                   (regexp-quote tag) (regexp-quote tag))))
+                   (regexp-quote tag) (regexp-quote tag) (regexp-quote tag))))
 
 ;; The element that holds a tag, counting its own openers and closers, so a
 ;; group comes back whole rather than stopping at its first child's closing

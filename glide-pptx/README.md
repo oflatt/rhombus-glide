@@ -79,11 +79,12 @@ def slide_3 = slide_canvas(
                                      ~color: hex("FFFFFF")))))))
 ```
 
-The visible `~name:` is only a convenience in an editor's selection pane.
-Identity is normally absent from the program: Rhombus's `at` macro derives an
-opaque tag from the call's source file and location, and Glide puts that tag in
-the exported shape's alt text. Renaming the shape in PowerPoint therefore does
-not break the connection back to source.
+The visible `~name:` is only readable metadata. Identity is normally absent
+from the program: Rhombus's `at` macro derives an opaque tag from the call's
+source file and location, and Glide puts that tag in the exported shape's alt
+text and object name. The duplication is intentional: PowerPoint preserves alt
+text, while LibreOffice drops it from groups and preserves the object name. A
+readable `~name:` is retained as the tag's suffix.
 
 That source tag names a *code site*, not an element, so one `at` inside a loop
 draws several elements under one tag. Dragging all of them the same way is one
@@ -562,12 +563,13 @@ format. Keynote never saves `.pptx`, so the loop exports one out of it, and it
 has no reload API — the document is closed and reopened, which loses the current
 slide and selection.
 
-Identity is layered: `descr` (alt text), then the shape `name`, then signature
-matching, which needs no annotation at all. Measured through a LibreOffice
-`pptx` round trip, `name` and `descr` on ordinary shapes **do** survive — the
-decks we export contain no placeholders, and it is placeholder shapes that get
-renamed to "PlaceHolder 1" and stripped. Shape ids are renumbered either way, so
-they are never a key.
+Identity is layered: `descr` (alt text) and the shape `name`, then conservative
+signature matching. LibreOffice preserves generated names, but drops `descr`
+from groups and can drop it from shapes it reconstructs, which is why automatic
+source identities are written to both fields. Shape ids are renumbered, so they
+are never a key. Untagged raw drawing is matched by the deterministic names the
+writer gives it, with kind and size checks so a newly inserted object is not
+mistaken for one that was deleted.
 
 ## Animated slideshows
 
@@ -763,7 +765,7 @@ Then this package, and the tools verification needs:
 
 ```console
 raco pkg install --auto --link /path/to/glide-pptx
-sudo apt-get install libreoffice-impress poppler-utils \
+sudo apt-get install libreoffice-impress python3-uno poppler-utils \
   fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea
 ```
 
@@ -780,9 +782,38 @@ python3 -m venv .venv && .venv/bin/pip install python-pptx
 ## Tests
 
 ```console
-raco test tests/fast.rkt     # ~90s, needs nothing but Racket -- run this while working
+raco test tests/fast.rkt     # ~90s; includes real LibreOffice edits when available
 raco test tests/slow.rkt     # ~4min, renders through LibreOffice and sweeps the corpus
 raco test tests/all.rkt      # both
+```
+
+When LibreOffice is installed, `fast.rkt` also drives actual saves, edits,
+copies, insertions, and a live UNO reload; without it those editor-specific
+checks say that they were skipped.
+
+To compare a source talk's settled epoch pictures with the editable deck as
+LibreOffice renders it, include the talk in the slow suite:
+
+```console
+GLIDE_TALK=/path/to/talk.rhm xvfb-run -a raco test tests/talk-source.rkt
+```
+
+The talk itself is not copied into this repository. The test exports one slide
+per epoch with slide numbers, renders that deck through LibreOffice, and checks
+every shown page against the source picture. `GLIDE_TALK_INK`,
+`GLIDE_TALK_MAE`, and `GLIDE_TALK_BAD` override the default eight-percent
+structural-ink, six-percent mean-error, and eight-percent differing-pixel
+tolerances. Those defaults sit just above this talk's measured text-engine
+drift. Ink within four cells of a 700-cell sampling grid (about eleven pixels
+on a full-HD page) counts as the same stroke, which absorbs glyph baseline and
+antialiasing differences; missing or displaced slide content is much larger.
+
+The corresponding editability check works on a copied source tree and adds a
+real LibreOffice text box on the final epoch of every logical slide:
+
+```console
+GLIDE_LO_PROGRAM=/path/to/talk.rhm GLIDE_LO_STAGES=1 \
+  GLIDE_LO_PROGRAM_MODE=add xvfb-run -a raco test tests/lo-edit.rkt
 ```
 
 The split is what a test needs, not how long it takes: `fast.rkt` is everything

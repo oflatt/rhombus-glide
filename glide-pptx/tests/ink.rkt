@@ -79,19 +79,39 @@
   (define a (sample apx aw ah gw gh))
   (define b (sample bpx bw bh gw gh))
   (define (inked? g i j) (< (vector-ref g (+ i (* j gw))) 200))
-  (define (near-ink? g i j)
-    (for*/or ([dj (in-range (- slack) (add1 slack))]
-              [di (in-range (- slack) (add1 slack))])
-      (define x (+ i di))
-      (define y (+ j dj))
-      (and (< -1 x gw) (< -1 y gh) (inked? g x y))))
+  ;; A summed-area table answers "is there ink in this slack square?" in
+  ;; constant time. The literal neighbourhood walk this replaces did up to 49
+  ;; vector probes for every ink cell; on a 148-epoch talk that turned a useful
+  ;; regression check into a quarter-hour wait without changing its answer.
+  (define pw (add1 gw))
+  (define (ink-prefix g)
+    (define p (make-vector (* pw (add1 gh)) 0))
+    (for ([j (in-range gh)])
+      (define row 0)
+      (for ([i (in-range gw)])
+        (when (inked? g i j) (set! row (add1 row)))
+        (vector-set! p (+ (add1 i) (* (add1 j) pw))
+                     (+ row (vector-ref p (+ (add1 i) (* j pw)))))))
+    p)
+  (define ap (ink-prefix a))
+  (define bp (ink-prefix b))
+  (define (near-ink? p i j)
+    (define x0 (max 0 (- i slack)))
+    (define y0 (max 0 (- j slack)))
+    (define x1 (min gw (+ i slack 1)))
+    (define y1 (min gh (+ j slack 1)))
+    (positive?
+     (+ (vector-ref p (+ x1 (* y1 pw)))
+        (vector-ref p (+ x0 (* y0 pw)))
+        (- (vector-ref p (+ x0 (* y1 pw))))
+        (- (vector-ref p (+ x1 (* y0 pw)))))))
   (define-values (diff ink)
     (for*/fold ([d 0] [k 0]) ([j (in-range gh)] [i (in-range gw)])
       (define ai (inked? a i j))
       (define bi (inked? b i j))
       (cond
         [(and (not ai) (not bi)) (values d k)]
-        [(and ai (not (near-ink? b i j))) (values (add1 d) (add1 k))]
-        [(and bi (not (near-ink? a i j))) (values (add1 d) (add1 k))]
+        [(and ai (not (near-ink? bp i j))) (values (add1 d) (add1 k))]
+        [(and bi (not (near-ink? ap i j))) (values (add1 d) (add1 k))]
         [else (values d (add1 k))])))
   (if (zero? ink) 0.0 (/ (exact->inexact diff) ink)))

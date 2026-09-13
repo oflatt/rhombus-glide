@@ -528,6 +528,72 @@
                       "to the `at` form the layer holds")
   (set-stage-slides! #f))
 
+;; The same two insertion paths across source modules. A canvas nested in an
+;; animated definition takes its indentation from that canvas's direct
+;; arguments, while a later-stage layer rewrites the running-order entry in the
+;; root module. Neither may slice offsets from the other file.
+(let ()
+  (define dir (build-path work "split-stage-add"))
+  (make-directory* dir)
+  (define slides (build-path dir "slides.rhm"))
+  (define program (build-path dir "talk.rhm"))
+  (display-to-file
+   (string-join
+    (list "#lang rhombus/and_meta"
+          "import:"
+          "  lib(\"glide-pptx/runtime.rhm\") open"
+          "  pict as pc"
+          "export:"
+          "  first"
+          "  second"
+          "def first:"
+          "  def canvas = slide_canvas("
+          "    ~width: 320.0, ~height: 240.0,"
+          "    at(20.0, 20.0, ~tag: \"First\","
+          "       shape_pict(~width: 60.0, ~height: 40.0)))"
+          "  def base = pc.Pict.from_handle(canvas)"
+          "  pc.switch(base, pc.animate(fun (t): base.alpha(t)))"
+          "def second:"
+          "  def canvas = slide_canvas("
+          "    ~width: 320.0, ~height: 240.0,"
+          "    at(120.0, 20.0, ~tag: \"Second\","
+          "       shape_pict(~width: 60.0, ~height: 40.0)))"
+          "  def base = pc.Pict.from_handle(canvas)"
+          "  pc.switch(base, pc.animate(fun (t): base.alpha(t)))")
+    "\n")
+   slides #:exists 'replace)
+  (display-to-file
+   (string-join
+    (list "#lang rhombus/and_meta"
+          "import:"
+          "  lib(\"glide-pptx/runtime.rhm\") open"
+          "  \"slides.rhm\" open"
+          "export: all_slides"
+          "glide_slides all_slides:"
+          "  [first, second]")
+    "\n")
+   program #:exists 'replace)
+  (set-stage-slides! #t)
+  (define deck (build-path dir "talk.pptx"))
+  (define w (build-path dir "w"))
+  (picts->pptx (load-program-picts program) deck)
+  (void (sync-once program deck #:workdir w))
+  (check-equal? (add-shape-to-deck! deck 1 "Base add" #:x 40.0 #:y 180.0)
+                "Base add")
+  (check-equal? (add-shape-to-deck! deck 4 "Late add" #:x 140.0 #:y 180.0)
+                "Late add")
+  (define r (sync-once program deck #:workdir w #:atomic? #t))
+  (check-equal? (map sync-action-kind (sync-report-applied r)) '(added added)
+                "both split-source insertion paths are written")
+  (check-regexp-match #rx"Base add" (file->string slides)
+                      "the first-stage shape went into the imported canvas")
+  (check-regexp-match #rx"show_as[(]second, from_stage[(]2, second,"
+                      (file->string program)
+                      "the later-stage shape wrapped the root entry")
+  (check-true (pair? (load-program-picts program))
+              "the two files still form a valid epoch deck")
+  (set-stage-slides! #f))
+
 ;; ------------------------------------------ which frame of a build settles
 ;;
 ;; Without stages a deck holds one slide per slide of the program, and the frame

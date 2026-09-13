@@ -67,6 +67,12 @@
 ;; It installs into whichever profile LibreOffice is using here, in a library of
 ;; its own called `Glide`, which is what it does in earnest too.
 (cond
+  ;; On a system with UNO, the adapter below tests the stronger path: it waits
+  ;; for the asynchronous reload and checks the live document's page count.
+  ;; The macro is a fallback for installations (notably macOS) whose Python
+  ;; cannot import UNO.
+  [(and soffice (getenv "DISPLAY") (have-uno?))
+   (printf "LibreOffice UNO available; Basic reload fallback skipped\n")]
   [(not (and soffice (getenv "DISPLAY") (libreoffice-user-dir)))
    (printf "no LibreOffice profile to install a reload macro into; skipped\n")]
   [else

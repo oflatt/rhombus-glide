@@ -306,6 +306,74 @@
                    (format "~a: tags are absent from the program" name)))
     (delete-file out)))
 
+;; `spAutoFit` has two representations at once. The file retains the rectangle
+;; the author drew plus the auto-fit instruction, while its displayed shape is
+;; resized to the natural text extent. Previewing the stored rectangle was the
+;; large visible mismatch; writing the displayed rectangle instead made the IR
+;; fail to round-trip. Check both halves here without needing LibreOffice.
+(let ()
+  (local-require glide-pptx/runtime glide-pptx/semantic glide-pptx/draw-ir pict)
+  (define stored-w 144.0)
+  (define stored-h 187.2)
+  (define x 12.0)
+  (define y 20.0)
+  (define body
+    (body* #:anchor 'center #:wrap? #f #:autofit 'grow
+           (para* (run* "middle" #:size 16.0 #:font "Carlito"))))
+  (define shape-box
+    (shape-pict #:width stored-w #:height stored-h #:fill (rgb 220 80 80)
+                #:body body))
+  (define shape-page
+    (pict->page (slide-canvas #:width 400.0 #:height 300.0
+                              (at x y shape-box #:tag "shape middle"))
+                400.0 300.0))
+  (define shape-item (first (display-page-items shape-page)))
+  (check-true (it:preset? shape-item) "an inserted text box remains a preset shape")
+  (when (it:preset? shape-item)
+    (check-= (it:preset-x shape-item) x 0.001 "the stored x is exported")
+    (check-= (it:preset-y shape-item) y 0.001 "the stored y is exported")
+    (check-= (it:preset-w shape-item) stored-w 0.001 "the stored width is exported")
+    (check-= (it:preset-h shape-item) stored-h 0.001 "the stored height is exported"))
+
+  ;; Bounding box of anything not white in a rendered pict.
+  (define (ink-bounds p)
+    (define tmp (make-temporary-file "autofit~a.png"))
+    (pict->png p tmp)
+    (define bm (read-bitmap tmp))
+    (delete-file tmp)
+    (define w (send bm get-width))
+    (define h (send bm get-height))
+    (define px (make-bytes (* 4 w h)))
+    (send bm get-argb-pixels 0 0 w h px)
+    (define xs '())
+    (define ys '())
+    (for* ([j (in-range h)] [i (in-range w)])
+      (define o (* 4 (+ i (* j w))))
+      (unless (and (> (bytes-ref px (+ o 1)) 245)
+                   (> (bytes-ref px (+ o 2)) 245)
+                   (> (bytes-ref px (+ o 3)) 245))
+        (set! xs (cons i xs))
+        (set! ys (cons j ys))))
+    (values (apply min xs) (apply min ys)
+            (add1 (- (apply max xs) (apply min xs)))
+            (add1 (- (apply max ys) (apply min ys)))))
+  (define-values (sx sy sw sh) (ink-bounds shape-box))
+  (check-true (< sw (* 0.75 stored-w)) "the preview draws the fitted shape width")
+  (check-true (< sh (* 0.40 stored-h)) "the preview draws the fitted shape height")
+  (check-= (+ sx (/ sw 2.0)) (/ stored-w 2.0) 2.0
+           "horizontal auto-fit is centred in the stored rectangle")
+  (check-= (+ sy (/ sh 2.0)) (/ stored-h 2.0) 2.0
+           "centre-anchored auto-fit is vertically centred")
+
+  ;; A bare textbox has no fill to expose its fitted box, but left-aligned text
+  ;; moves from the stored left inset to the centred natural-width box.
+  (define text-box
+    (textbox #:width stored-w #:height stored-h #:wrap? #f #:autofit 'grow
+             (para* (run* "middle" #:size 16.0 #:font "Carlito"))))
+  (define-values (tx ty tw th) (ink-bounds text-box))
+  (check-true (> tx (* 0.20 stored-w)) "bare auto-fit text is centred horizontally")
+  (check-true (< ty (* 0.20 stored-h)) "a top-anchored auto-fit box keeps its top edge"))
+
 ;; ------------------------------------------- a leading space is not a wrap
 
 ;; Text that starts with spaces is indented by them. They used to be dropped

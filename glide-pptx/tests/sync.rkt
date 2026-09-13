@@ -943,6 +943,38 @@
                   "and the drag comes back as a move, on the group itself")
     (check-equal? (sync-action-tag (first (sync-report-actions r2))) (cdr found))))
 
+;; LibreOffice 24.2 removes the alternative-description field from a group and
+;; all of its children when it saves. Their ordinary names survive. Those names
+;; are presentation metadata, not source identity, but a unique readable suffix
+;; is enough to recover the child that an automatic source tag named.
+(let ()
+  (define-values (dir program exported)
+    (fixture "grouped-stripped-descriptions" "04-pictures-groups.pptx"))
+  (check-true
+   (edit-slide-part! exported 2 #px" descr=\"glide-pptx:[^\"]*\"" "" #:all? #t)
+   "the group descriptions were stripped")
+  (define r (sync-once program exported #:workdir (build-path dir "syncwork") #:dry-run? #t))
+  (check-equal? (sync-report-actions r) '()
+                "unique preserved group-child names recover their source identities"))
+
+;; LibreOffice may reconstruct an ordinary shape when its text is edited. The
+;; hidden description can disappear in that rewrite, but its unique readable
+;; name remains and must still lead back to the source call.
+(let ()
+  (define-values (dir program exported)
+    (fixture "edited-stripped-description" "03-shapes.pptx"))
+  (check-true
+   (edit-slide-part! exported 1 #px" descr=\"glide-pptx:[^\"]*\"" "" #:all? #t)
+   "the editor stripped the hidden descriptions")
+  (check-true (retext-in-deck! exported 1 "Rectangle 1" "still the rectangle")
+              "and retyped the named shape")
+  (define r (sync-once program exported #:workdir (build-path dir "syncwork") #:dry-run? #t))
+  (define acted (filter (lambda (a) (not (eq? 'noted (sync-action-kind a))))
+                        (sync-report-actions r)))
+  (check-equal? (map sync-action-kind acted) '(retext)
+                "the unique readable name recovers the source identity")
+  (check-equal? (automatic-tag-name (sync-action-tag (first acted))) "Rectangle 1"))
+
 ;; ============================================ the editing workflow, end to end
 
 ;; The single edits each have their own test above. What those do not cover is

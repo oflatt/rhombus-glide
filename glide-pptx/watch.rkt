@@ -198,6 +198,16 @@
 ;; UNO comes from LibreOffice's own Python. A Mac's `python3` is the system's
 ;; and knows nothing about it, and even on Linux the packaged one is surer than
 ;; whatever `python3` happens to mean today.
+(define (libreoffice-driver! what pptx)
+  (define py (find-executable-path "python3"))
+  (and py
+       (file-exists? libreoffice-driver)
+       (parameterize ([current-output-port (open-output-nowhere)]
+                      [current-error-port (open-output-nowhere)])
+         (system*/exit-code py (path->string libreoffice-driver) what
+                            (number->string LIBREOFFICE-PORT)
+                            (path->string (path->complete-path pptx))))))
+
 ;; --------------------------- reloading LibreOffice without a Python at all
 
 ;; LibreOffice has no reload on its command line, and the UNO bridge that would
@@ -397,13 +407,28 @@ BASIC
 ;; says yes and the bound on the dispatch is the backstop.
 (define (soffice-running?)
   (define pgrep (find-executable-path "pgrep"))
+  ;; A headless LibreOffice whose display went away can remain as a zombie
+  ;; until its parent reaps it. `pgrep` reports that process even though there
+  ;; is nobody there to receive a macro; treating it as live makes the first
+  ;; reload request start an empty office instead of opening the deck.
+  (define (zombie? pid)
+    (define stat (build-path "/proc" pid "stat"))
+    (and (file-exists? stat)
+         (with-handlers ([exn:fail? (lambda (_e) #f)])
+           (define m (regexp-match #rx"^[0-9]+ [(].*[)] ([A-Z]) " (file->string stat)))
+           (and m (string=? "Z" (second m))))))
   (cond
     [(not pgrep) #t]
     [else
      (for/or ([name (in-list '("soffice.bin" "soffice"))])
-       (eqv? 0 (parameterize ([current-output-port (open-output-nowhere)]
-                              [current-error-port (open-output-nowhere)])
-                 (system*/exit-code pgrep "-x" name))))]))
+       (define out (open-output-string))
+       (define code
+         (parameterize ([current-output-port out]
+                        [current-error-port (open-output-nowhere)])
+           (system*/exit-code pgrep "-x" name)))
+       (and (eqv? 0 code)
+            (for/or ([pid (in-list (string-split (get-output-string out)))])
+              (not (zombie? pid)))))]))
 
 ;; Runs one of the macro's subs about one deck and hands back what it said, or
 ;; #f when it could not be asked at all.
@@ -488,18 +513,27 @@ BASIC
    (lambda (pptx) pptx)
    (lambda (doc pptx) #t)
    (lambda (pptx)
-     ;; Reload what is open; open it if it is not.
-     (case (libreoffice-macro-reload! pptx)
-       [(reloaded) #t]
-       [else (libreoffice-launch! pptx)]))
+     ;; UNO waits for the asynchronous reload and restores the slide in view.
+     ;; The Basic macro is the fallback on systems whose Python cannot import
+     ;; LibreOffice's UNO module (notably current macOS packages).
+     (case (libreoffice-driver! "reload" pptx)
+       [(0) #t]
+       [else
+        (case (libreoffice-macro-reload! pptx)
+          [(reloaded) #t]
+          [else (libreoffice-launch! pptx)])]))
    ;; Closing the editor ends the session. A macro that could not be asked says
    ;; nothing rather than "closed": ending a session because an answer did not
    ;; arrive would throw away the work it was in the middle of.
    (lambda ()
      (define deck (current-libreoffice-deck))
-     (case (and deck (libreoffice-macro-open? deck))
-       [(not-open) #f]
-       [else #t]))))
+     (case (and deck (libreoffice-driver! "open" deck))
+       [(0) #t]
+       [(4) #f]
+       [else
+        (case (and deck (libreoffice-macro-open? deck))
+          [(not-open) #f]
+          [else #t])]))))
 
 ;; Which deck `open?` should ask about. The adapter's own `open?` takes no
 ;; argument -- it is asked about the session, and there is one deck in it.

@@ -22,7 +22,7 @@
          "staged.rkt"
          ;; A whole talk, when there is one to compare against; it says so and
          ;; passes when there is not.
-         "talk.rkt")
+         "talk.rkt" "talk-source.rkt")
 
 ;; A check that fails prints and carries on, which is what makes a whole run
 ;; readable -- and leaves the exit code saying nothing. Run on its own, this

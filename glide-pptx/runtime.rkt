@@ -418,6 +418,25 @@
   (values (+ widest (insets-l ins) (insets-r ins))
           (+ total (insets-t ins) (insets-b ins))))
 
+;; The rectangle an auto-fitting body actually draws within its stored shape.
+;; Horizontal growth is centred; a wrapping box keeps its width. Vertically,
+;; the text anchor is the fixed edge or point. Returning the stored rectangle
+;; for every other body lets shape and bare-textbox rendering share the rule.
+(define (body-drawn-box tb w h)
+  (define grow? (and tb (eq? 'grow (text-body-autofit tb))))
+  (define-values (natural-w natural-h)
+    (if grow? (body-natural-size tb w h) (values w h)))
+  (define draw-w (if (and grow? (not (text-body-wrap? tb))) natural-w w))
+  (define draw-h natural-h)
+  (values draw-w draw-h
+          (/ (- w draw-w) 2.0)
+          (if grow?
+              (case (text-body-anchor tb)
+                [(center) (/ (- h draw-h) 2.0)]
+                [(bottom) (- h draw-h)]
+                [else 0.0])
+              0.0)))
+
 (define (layout-body tb w h)
   (define ins (text-body-insets tb))
   (define avail-w (max 1.0 (- w (insets-l ins) (insets-r ins))))
@@ -720,14 +739,24 @@
                     #:flip-h? [fh #f] #:flip-v? [fv #f])
   (define geom (or geom0 (preset-geom (or shape-name "rect") '())))
   (define fill (if (rgba? fill0) (solid-fill fill0) fill0))
+  ;; DrawingML keeps the extent that was originally drawn even when
+  ;; <a:spAutoFit/> tells the editor to resize the shape to its contents.
+  ;; LibreOffice and PowerPoint preserve the old centre while doing that. Keep
+  ;; the pict's stored extent (so its source placement does not move), but draw
+  ;; the resized shape and text at the corresponding inset. The semantic
+  ;; descriptor retains that stored extent and `spAutoFit`, so the editor
+  ;; performs the same displayed resize itself.
+  (define-values (draw-w draw-h draw-x draw-y) (body-drawn-box body w h))
   (define closed?
     (or (custom-geom? geom) (geometry-closed? (preset-geom-name geom))))
   (define base
     (dc (lambda (dc dx dy)
+          (define dx* (+ dx draw-x))
+          (define dy* (+ dy draw-y))
           (define path
             (if (custom-geom? geom)
-                (custom-path geom w h #:flip-h? fh #:flip-v? fv)
-                (preset-path (preset-geom-name geom) w h (preset-geom-adjust geom)
+                (custom-path geom draw-w draw-h #:flip-h? fh #:flip-v? fv)
+                (preset-path (preset-geom-name geom) draw-w draw-h (preset-geom-adjust geom)
                              #:flip-h? fh #:flip-v? fv)))
           (define old-pen (send dc get-pen))
           (define old-brush (send dc get-brush))
@@ -737,11 +766,11 @@
             (draw-shadow! dc sh
                           (lambda ()
                             (if (custom-geom? geom)
-                                (custom-path geom w h #:flip-h? fh #:flip-v? fv)
-                                (preset-path (preset-geom-name geom) w h
+                                (custom-path geom draw-w draw-h #:flip-h? fh #:flip-v? fv)
+                                (preset-path (preset-geom-name geom) draw-w draw-h
                                              (preset-geom-adjust geom)
                                              #:flip-h? fh #:flip-v? fv)))
-                          w h dx dy))
+                          draw-w draw-h dx* dy*))
           (cond
             [(image-fill? fill)
              ;; An image fill is the bitmap clipped to the shape's outline.
@@ -752,28 +781,35 @@
                (define rgn (new region% [dc dc]))
                (define moved (new dc-path%))
                (send moved append path)
-               (send moved translate dx dy)
+               (send moved translate dx* dy*)
                (send rgn set-path moved)
                (send dc set-clipping-region rgn)
                (define old-alpha (send dc get-alpha))
                (when (< fill-alpha 0.999) (send dc set-alpha (* old-alpha fill-alpha)))
-               (draw-bitmap-stretched dc bm dx dy w h
+               (draw-bitmap-stretched dc bm dx* dy* draw-w draw-h
                                       0 0 (send bm get-width) (send bm get-height))
                (send dc set-alpha old-alpha)
                (send dc set-clipping-region old-rgn))]
             [else
-             (send dc set-brush (if closed? (fill->brush fill w h)
+             (send dc set-brush (if closed? (fill->brush fill draw-w draw-h)
                                     (new brush% [style 'transparent])))])
           (send dc set-pen (stroke->pen line))
           (unless (and (image-fill? fill) (not (stroke? line)))
-            (send dc draw-path path dx dy))
-          (draw-line-ends! dc line geom w h fh fv dx dy)
+            (send dc draw-path path dx* dy*))
+          (draw-line-ends! dc line geom draw-w draw-h fh fv dx* dy*)
           (send dc set-pen old-pen)
           (send dc set-brush old-brush))
         w h))
-  (with-desc (if (and body (not (text-body-empty? body)))
-                 (lt-superimpose base (text-pict body w h))
-                 base)
+  (define text-layer
+    (and body
+         (not (text-body-empty? body))
+         ;; `dc` deliberately retains the stored extent while allowing a shape
+         ;; that grows beyond it to paint outside that bookkeeping rectangle.
+         (let ([tp (text-pict body draw-w draw-h)])
+           (dc (lambda (dc dx dy)
+                 (draw-pict tp dc (+ dx draw-x) (+ dy draw-y)))
+               w h))))
+  (with-desc (if text-layer (lt-superimpose base text-layer) base)
              (shape-desc w h geom fill line body fh fv sh)))
 
 ;; A bitmap stretched into w x h, optionally cropped by fractions of its source.
@@ -1019,7 +1055,14 @@
                  #:rotate [rot 0.0]
                  . paras)
   (define body (text-body paras anchor ac? wrap? autofit ins rot 'all))
-  (with-desc (text-pict body w h) (text-desc w h body)))
+  (define-values (draw-w draw-h draw-x draw-y) (body-drawn-box body w h))
+  (define tp (text-pict body draw-w draw-h))
+  ;; As for a shape, keep the stored pict extent so the source placement stays
+  ;; put while the auto-fit text paints at its displayed offset within it.
+  (with-desc (dc (lambda (dc dx dy)
+                   (draw-pict tp dc (+ dx draw-x) (+ dy draw-y)))
+                 w h)
+             (text-desc w h body)))
 
 (define (body* #:anchor [anchor 'top] #:anchor-center? [ac? #f] #:wrap? [wrap? #t]
                #:autofit [autofit 'none] #:insets [ins default-insets] #:rotate [rot 0.0]

@@ -1,10 +1,11 @@
 #lang racket/base
 ;; Opaque editor identifiers derived from Rhombus source locations.
 ;;
-;; They live in a deck's alt text, not in the user's program. Keeping the
+;; They live in exported deck metadata, not in the user's program. Keeping the
 ;; spelling here gives the runtime (which creates them), the source reader
-;; (which recovers the same id), and the pptx writer (which hides them from the
-;; selection pane) one definition of the protocol.
+;; (which recovers the same id), and the pptx writer one definition of the
+;; protocol. The writer uses both alt text and the object name because
+;; LibreOffice does not reliably preserve the former.
 (require file/sha1 racket/path racket/string)
 (provide source-location-tag source-position-tag automatic-tag? automatic-tag-key
          automatic-tag-name)

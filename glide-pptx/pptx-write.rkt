@@ -11,9 +11,11 @@
 ;; back what we write, which is what makes the export self-testing.
 (require racket/list racket/string racket/math racket/file racket/path
          racket/format racket/class racket/draw
+         (only-in racket/draw/unsafe/png
+                  create-png-writer write-png destroy-png-writer)
          file/zip
          "draw-ir.rkt" "source-tag.rkt" (prefix-in ir: "ir.rkt"))
-(provide display-pages->pptx current-write-warnings)
+(provide display-pages->pptx display-page-sequence->pptx current-write-warnings)
 
 (define current-write-warnings (make-parameter #f))
 (define (warn! fmt . args)
@@ -158,13 +160,15 @@
 
 ;; ------------------------------------------------------------------ shapes
 
-;; A user-supplied tag is also a useful Selection Pane name. An automatic tag is
-;; deliberately opaque bookkeeping, so it goes only in alt text and the editor
-;; gets its ordinary kind-and-id name instead.
+;; The name is the one piece of non-visual shape metadata LibreOffice preserves
+;; reliably. In particular, it drops `descr` from groups (and from some shapes
+;; that it reconstructs), so an automatic source identity has to travel here as
+;; well as in alt text. It is still generated only in the exported file -- it
+;; never appears in the user's program -- and its optional suffix keeps the
+;; original, readable object name visible at the end of the Selection Pane
+;; entry.
 (define (editor-name tag fallback)
-  (or (automatic-tag-name tag)
-      (and tag (not (automatic-tag? tag)) tag)
-      fallback))
+  (or tag fallback))
 
 (define (nv-xml id name #:tag [tag #f])
   (format (string-append "<p:nvSpPr><p:cNvPr id=\"~a\" name=\"~a\"~a/>"
@@ -841,8 +845,17 @@
 ;; Writes `pages` as a .pptx at `path`. All pages take the size of the first.
 (define (display-pages->pptx pages path)
   (when (null? pages) (error 'display-pages->pptx "no pages"))
-  (define width (display-page-width (first pages)))
-  (define height (display-page-height (first pages)))
+  (display-page-sequence->pptx
+   (in-list pages) (length pages)
+   (display-page-width (first pages)) (display-page-height (first pages)) path))
+
+;; The streaming form used by `picts->pptx`: one page is adapted, encoded and
+;; released before the next is made. A long animated talk can otherwise retain
+;; the raw ARGB of every flattened fallback until the final zip -- several
+;; gigabytes for 149 full-HD epochs, enough for racket/draw's next PNG encoder
+;; to fail with an invalid native-memory reference.
+(define (display-page-sequence->pptx pages page-count width height path)
+  (when (zero? page-count) (error 'display-page-sequence->pptx "no pages"))
   (define dir (make-temporary-file "pptx-out~a" 'directory))
   (define (put! name content)
     (define full (build-path dir (string->path name)))
@@ -853,17 +866,17 @@
   (define all-images '())
   (define names '())
   (define (add! name content) (put! name content) (set! names (cons name names)))
-  (for ([page (in-list pages)] [i (in-naturals 1)])
+  (for ([page pages] [i (in-naturals 1)])
     (define-values (xml images) (slide-xml page i))
     (add! (format "ppt/slides/slide~a.xml" i) xml)
     (add! (format "ppt/slides/_rels/slide~a.xml.rels" i) (slide-rels images))
     (for ([im (in-list images)])
       (add! (first im) (item-bytes (third im)))
       (set! all-images (cons (first im) all-images))))
-  (add! "[Content_Types].xml" (content-types (length pages) all-images))
+  (add! "[Content_Types].xml" (content-types page-count all-images))
   (add! "_rels/.rels" root-rels)
-  (add! "ppt/presentation.xml" (presentation-xml (length pages) width height))
-  (add! "ppt/_rels/presentation.xml.rels" (presentation-rels (length pages)))
+  (add! "ppt/presentation.xml" (presentation-xml page-count width height))
+  (add! "ppt/_rels/presentation.xml.rels" (presentation-rels page-count))
   (add! "ppt/slideMasters/slideMaster1.xml" master-xml)
   (add! "ppt/slideMasters/_rels/slideMaster1.xml.rels" master-rels)
   (add! "ppt/slideLayouts/slideLayout1.xml" layout-xml)
@@ -901,12 +914,50 @@
   (send bm save-file o 'png)
   (get-output-bytes o))
 
-;; The recorded bitmap is raw ARGB rows; round-trip it through a bitmap% to get
-;; a PNG, which is the only raster format worth putting in a package.
+;; Small images take the native bitmap path, which converts channels much faster
+;; than a Racket loop. Very large flattened fallbacks do not: creating a second
+;; full-size Cairo surface for a 3840x2160 page intermittently failed in
+;; `save-file` on a 149-epoch talk. If a smaller native encode ever fails for
+;; the same reason, retry it through the bounded direct path too.
+(define DIRECT-PNG-PIXELS 4000000)
+
 (define (png-bytes i)
+  (cond
+    [(> (* (it:image-src-w i) (it:image-src-h i)) DIRECT-PNG-PIXELS)
+     (png-bytes/direct i)]
+    [else
+     (with-handlers ([exn:fail? (lambda (_exn) (png-bytes/direct i))])
+       (png-bytes/bitmap i))]))
+
+(define (png-bytes/bitmap i)
   (define w (it:image-src-w i)) (define h (it:image-src-h i))
   (define bm (make-bitmap w h))
   (send bm set-argb-pixels 0 0 w h (it:image-argb i))
   (define o (open-output-bytes))
   (send bm save-file o 'png)
+  (get-output-bytes o))
+
+;; Direct libpng encoding still needs RGBA rows, but no second Cairo surface.
+(define (png-bytes/direct i)
+  (define w (it:image-src-w i)) (define h (it:image-src-h i))
+  (define argb (it:image-argb i))
+  (define stride (* 4 w))
+  (define rows
+    (for/vector #:length h ([j (in-range h)])
+      (define row (make-bytes stride))
+      (define src-row (* j stride))
+      (for ([x (in-range w)])
+        (define src (+ src-row (* 4 x)))
+        (define dst (* 4 x))
+        (bytes-set! row dst (bytes-ref argb (+ src 1)))
+        (bytes-set! row (+ dst 1) (bytes-ref argb (+ src 2)))
+        (bytes-set! row (+ dst 2) (bytes-ref argb (+ src 3)))
+        (bytes-set! row (+ dst 3) (bytes-ref argb src)))
+      row))
+  (define o (open-output-bytes))
+  (define writer (create-png-writer o w h #f #t))
+  (dynamic-wind
+    void
+    (lambda () (write-png writer rows))
+    (lambda () (destroy-png-writer writer)))
   (get-output-bytes o))

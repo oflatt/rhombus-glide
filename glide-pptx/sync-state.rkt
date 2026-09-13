@@ -16,8 +16,10 @@
 ;; only our own alt text makes a tag, and a shape the program drew without an
 ;; `at` form of its own has none. It still has a name -- ours if we wrote the
 ;; deck, the editor's if the editor made it -- and a report that cannot name the
-;; thing that moved is a report nobody can act on. #f on the program's side of
-;; the sync, which has no names to give.
+;; thing that moved is a report nobody can act on. On the program side this is
+;; the deterministic name the PPTX writer will give it; LibreOffice preserves
+;; those names even when it normalizes the geometry of an otherwise untagged
+;; piece of drawing.
 ;; `kind` is 'shape, 'text, 'picture or 'other. `text` is the element's visible
 ;; text, flattened, which is the strongest signal for recognizing it again.
 ;; `paint` is a short digest of its fill, and `z` its position in paint order.
@@ -72,9 +74,34 @@
 
 (define (items->slide-state index width height items #:background [bg #f]
                             #:hidden? [hidden? #f])
+  ;; The writer allocates one cNvPr id per item, recursively through groups.
+  ;; Mirror that numbering so an untagged program item has the same fallback
+  ;; name here as in the deck it produces.
+  (define next-id 1)
+  (define (item-count i)
+    (if (it:group? i)
+        (+ 1 (for/sum ([child (in-list (it:group-items i))]) (item-count child)))
+        1))
+  (define (fallback-name i id)
+    (cond [(it:rect? i) (format "Rectangle ~a" id)]
+          [(it:ellipse? i) (format "Oval ~a" id)]
+          [(it:path? i) (format "Freeform ~a" id)]
+          [(it:text? i) (format "Text ~a" id)]
+          [(or (it:image? i) (it:picture? i)) (format "Picture ~a" id)]
+          [(it:group? i) (format "Group ~a" id)]
+          [(it:table? i) (format "Table ~a" id)]
+          [(it:textbox? i) (format "TextBox ~a" id)]
+          [(it:shape-path? i) (format "Freeform ~a" id)]
+          [(it:preset? i) (format "Shape ~a" id)]
+          [else #f]))
   (slide-state index width height
                (for/list ([i (in-list items)] [z (in-naturals)])
-                 (if (semantic-item? i) (item->el-state i z) (drawn->el-state i z)))
+                 (define id (add1 next-id))
+                 (set! next-id (+ next-id (item-count i)))
+                 (define state
+                   (if (semantic-item? i) (item->el-state i z) (drawn->el-state i z)))
+                 (struct-copy el-state state
+                              [name (or (item-tag i) (fallback-name i id))]))
                (paint-name (fill-style bg))
                (and hidden? #t)))
 
