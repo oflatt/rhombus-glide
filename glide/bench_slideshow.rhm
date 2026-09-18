@@ -1,0 +1,21 @@
+#lang rhombus
+
+import:
+  pict open
+  glide open
+
+glide_bench { "todo configurations here" : 2}:
+  fun main():
+    beside(~sep: 100, bubble(~width: 100), bubble())
+
+  fun other():
+    bubble()
+
+  fun slide0():
+    nothing
+
+  let tabs:
+    [[bubble()]]
+
+  let slides:
+    [main(), main(), other(), slide0()]

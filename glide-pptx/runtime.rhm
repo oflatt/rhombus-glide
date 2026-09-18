@@ -7,6 +7,9 @@
 // Rhombus spelling, and generated code should not have to escape them.
 
 import:
+  // First, and before anything that reaches slideshow: it takes `--skip N` off
+  // the command line, which slideshow would otherwise refuse. See `skip.rhm`.
+  lib("glide-pptx/skip.rhm")
   lib("glide-pptx/runtime.rkt") as rt
   lib("glide-pptx/export.rkt") as ex
   lib("glide-pptx/fonts.rkt") as ft
@@ -78,13 +81,17 @@ export:
 //      divider(0),
 //      in_section(0, slide_2)]
 //
-// `in_section` uses its final identifier as the source owner, while `divider`
-// is a generated page with no source canvas. `show_as` and `show_only` are the
+// `in_section` uses the identifier after the section as the source owner --
+// keyword arguments may follow it -- while `divider` is a generated page with no
+// source canvas. `show_as` and `show_only` are the
 // corresponding escape hatches for other decorators and generated pages; they
 // are marker forms understood only here and do not enter the user program as
 // functions.
 expr.macro
 | 'glide_slide_entry($(('in_section($section, $(owner :: Identifier))' && shown)))':
+    'rt.#{make-slide-spec}(#'$owner, $owner, $shown)'
+// the same, with whatever keywords the deck's `in_section` takes after the slide
+| 'glide_slide_entry($(('in_section($section, $(owner :: Identifier), $kw_arg, ...)' && shown)))':
     'rt.#{make-slide-spec}(#'$owner, $owner, $shown)'
 | 'glide_slide_entry($(('divider($arg, ...)' && shown)))':
     'rt.#{make-slide-spec}(#false, #false, $shown)'

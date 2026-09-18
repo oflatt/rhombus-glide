@@ -12,6 +12,8 @@
 // translating, exporting and syncing a deck all have to work with no display.
 
 import:
+  // before slideshow, so that `--skip N` is gone by the time it reads the line
+  lib("glide-pptx/skip.rhm").skip_count
   slideshow open
   lib("slideshow/main.rkt") as ss
   lib("glide-pptx/runtime.rhm") as glide
@@ -46,6 +48,9 @@ export:
 // as a function is therefore always shown. A program that wants a slide left
 // out of a lazy deck leaves it out of the list.
 fun show_slides(slides, ~width: w :: Real, ~height: h :: Real):
+  // `racket talk.rhm --skip N` starts N slides in, and the N are never built
+  when skip_count() > 0
+  | set_start_from(skip_count() + 1)
   def page = blank_client()
   def m = ss.margin
   // The page, not the client area.

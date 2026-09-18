@@ -18,7 +18,11 @@
 //     because a deck cuts;
 //   * `~transition:`, how the next slide arrives -- `#'up`, `#'down`, `#'left`
 //     and `#'right` pan the old page off that edge, and `#'none` cuts to it,
-//     which is the default and what a deck does;
+//     which is the default and what a deck does. A slide that is a `Pict` can
+//     say so for itself, with `#'transition` in its first epoch's metadata --
+//     `p.epoch_set_metadata(0, { #'transition: #'right })` -- which is how a
+//     slide built by a helper and handed over as a function names its own
+//     arrival; see `transition_in`;
 //   * `dead_beats`, which reads the frames back and says which advances change
 //     nothing, because a press of the clicker that does no work is invisible in
 //     the source and obvious from the audience;
@@ -38,6 +42,7 @@ import:
 export:
   staged_slide
   do_staged_slide           // the function behind the macro, for a show that loops
+  transition_in             // the arrival a pict names for itself; see below
   arrive                    // what a transition ends with; see below
   arriving_page
   dead_beats                // advances that change nothing; see below
@@ -259,6 +264,17 @@ fun hide_page_numbers():
   | _installed[0] := #true
     ss.#{set-page-numbers-visible!}(#false)
 
+// The arrival a pict names for itself: `#'transition` in its first epoch's
+// metadata, or `#false`. Epoch metadata survives combination, so a slide wrapped
+// in a header or a stage still says what the slide inside it said. A pict handle
+// or a list of picts names nothing.
+fun transition_in(p) :: maybe(Symbol):
+  cond
+  | p is_a Pict:
+      def m = (p :~ Pict).epoch_metadata(0)
+      if m.has_key(#'transition) | m[#'transition] | #false
+  | ~else: #false
+
 // `~transition` names where the next slide comes from: `#'down` (the default)
 // means the old page leaves upwards and this one follows it in.
 fun do_staged_slide(make, ~title: ttl = #false, ~transition: tr = #false,
@@ -268,10 +284,11 @@ fun do_staged_slide(make, ~title: ttl = #false, ~transition: tr = #false,
   when _slide_no[0] >= _start_from[0]
   | _current[0] := _slide_no[0]
     def content = force(make)
-    // What this slide asked for, or what the talk asked for. Skipped on the
-    // first slide, because a transition needs a previous page, and on `#'none`,
-    // which is a cut -- and suits a predecessor that animates itself out.
-    def arrival = tr || _default_transition[0]
+    // What this slide asked for -- through `~transition:`, or for itself in its
+    // metadata -- or what the talk asked for. Skipped on the first slide, because
+    // a transition needs a previous page, and on `#'none`, which is a cut -- and
+    // suits a predecessor that animates itself out.
+    def arrival = tr || transition_in(content) || _default_transition[0]
     when _emitted[0] && arrival != #'none
     | slide_transition(pan_transition(arrival))
     _emitted[0] := #true

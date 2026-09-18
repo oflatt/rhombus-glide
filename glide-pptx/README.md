@@ -243,13 +243,23 @@ first, which needs macOS.
 Running the program shows the slides -- its `module main` is a
 [slideshow](https://docs.racket-lang.org/rhombus-slideshow/), and each slide
 reaches it through `Pict.from_handle`, which is also the bridge for refactoring
-generated code into `rhombus/pict`'s animated picts. The backup PDF is a
-submodule:
+generated code into `rhombus/pict`'s animated picts. `--skip N` starts N slides
+in: the N are never built, which on a talk that takes nine seconds to start is
+most of the nine, and the numbers in the corner (`set_slide_numbers`) stay what
+they were. Every other flag is slideshow's own, so its printer writes the backup
+PDF, one page per press. The PDF submodule does the same without slideshow:
 
 ```shell
 racket talk.rhm                                              # show the slides
-racket -l racket/base -e '(require (submod (file "talk.rhm") pdf))'   # write the PDF
+racket talk.rhm --skip 20                                    # from slide 21
+racket talk.rhm --pdf -c -e -o talk.pdf                      # write the PDF
+racket -l racket/base -e '(require (submod (file "talk.rhm") pdf))'   # or so
 ```
+
+`--skip` is read off the command line when `glide-pptx/runtime.rhm` is
+instantiated, before slideshow sees it -- slideshow parses the line the moment it
+is loaded and refuses a flag it does not know -- so a program has to import the
+runtime before anything that imports slideshow. A generated program does.
 
 ## Starting one
 
