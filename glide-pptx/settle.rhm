@@ -1,0 +1,66 @@
+#lang rhombus
+// The frames a slide comes to rest on.
+//
+// A slide that has been given stages is an animated `Pict` -- a value from
+// rhombus/pict, not a pict this runtime can read. A frame of it is a pict
+// again, and the canvases it was built from are still inside that: the tag an
+// element carries rides on the pict as a field, so every combinator between
+// here and there has kept it.
+//
+// Which frame, though? Not simply the last: an epoch that fades something out
+// ends on a picture with less in it than the one before, and a talk whose last
+// beat is a fade-out would come back missing what it faded. So this offers
+// every frame the slide settles on -- the start and the end of each epoch --
+// and leaves the choice to the caller, which picks the one that shows the most.
+//
+// This is in Rhombus because `snapshot` is a Rhombus method; everything else
+// that reads a slide is Racket, and calls this.
+import: pict as pc
+
+export:
+  settle_frames
+  stage_frames
+  over_from
+
+fun settle_frames(s):
+  if s is_a pc.Pict
+  | List.append(
+      & (for List (i in 0 .. math.max(1, s.duration)):
+           [s.snapshot(i, 1.0).handle, s.snapshot(i, 0.0).handle]))
+  | [s]
+
+// The pages a slide becomes in the show, in order.
+//
+// slideshow makes one page per epoch of an animated `Pict` -- `staged.rhm` says
+// why: `s` steps a whole slide rather than an animation frame -- and each of
+// those pages comes to rest at the end of its epoch. So a deck that steps the
+// way the show steps holds one slide per epoch, and a slide that does not
+// animate holds one.
+fun stage_frames(s):
+  if s is_a pc.Pict
+  | for List (i in 0 .. math.max(1, s.duration)):
+      s.snapshot(i, 1.0).handle
+  | [s]
+
+// A layer laid over a slide that animates, appearing from one stage on.
+//
+// A shape drawn on the third stage of a slide is a shape that appears there and
+// not before, and the slide's own canvas cannot say so: a canvas is one still
+// picture, and the staging is applied to it from outside. So the shape goes
+// over the top, in a layer of its own that starts when it should -- built by
+// `make_layer`, which is handed the slide's own size, so the layer is a canvas
+// like any other and what it holds keeps its tag.
+//
+// `delay` is `time_clip` and `time_pad` together: nothing before the stage, and
+// from there on whatever the layer draws.
+fun over_from(stage, slide, make_layer):
+  def a :~ pc.Pict = as_pict(slide)
+  def layer :~ pc.Pict = as_pict(make_layer(a.width, a.height))
+  // `concurrent` gives the two the same duration and hands them back as they
+  // now stand; putting one over the other is a separate step, and it is left
+  // and top so a layer the size of the slide lands where the slide is.
+  def both = pc.concurrent(a, layer.delay(math.max(0, stage - 1)))
+  pc.overlay(~horiz: #'left, ~vert: #'top, both[0], both[1])
+
+fun as_pict(v) :~ pc.Pict:
+  if v is_a pc.Pict | v | pc.Pict.from_handle(v)

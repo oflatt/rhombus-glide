@@ -1,0 +1,5 @@
+compiled/
+out/
+*.pdf
+!docs/*.pdf
+tests/corpus/

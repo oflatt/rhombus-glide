@@ -1,0 +1,445 @@
+#lang rhombus/and_meta
+// Showing a slide the way a talk shows one: numbered, revealed, and arrived at.
+//
+// This is the `staged_slide` from the 2026 ICFP talk, brought here so that a
+// converted deck and a hand-written one are shown by the same code. A generated
+// program is meant to become a hand-written one, and a talk that has been half
+// rewritten should not change how it plays.
+//
+// What it adds to slideshow's `slide`:
+//
+//   * `set_slide_numbers`, the number `--skip` wants in the corner -- off by
+//     default, since it is ink the deck did not ask for, and the one thing you
+//     want when rehearsing from the middle. The switch is the runtime's and the
+//     number is composed onto the slide rather than added while the slide is
+//     assembled, so the deck the exporter writes carries it too;
+//   * `set_start_from`, so the numbering stays honest when slides are skipped;
+//   * `set_reveal`, which fades each slide up from blank -- off by default,
+//     because a deck cuts;
+//   * `~transition:`, how the next slide arrives -- `#'up`, `#'down`, `#'left`
+//     and `#'right` pan the old page off that edge, and `#'none` cuts to it,
+//     which is the default and what a deck does. A slide that is a `Pict` can
+//     say so for itself, with `#'transition` in its first epoch's metadata --
+//     `p.epoch_set_metadata(0, { #'transition: #'right })` -- which is how a
+//     slide built by a helper and handed over as a function names its own
+//     arrival; see `transition_in`;
+//   * `dead_beats`, which reads the frames back and says which advances change
+//     nothing, because a press of the clicker that does no work is invisible in
+//     the source and obvious from the audience;
+//   * a held last frame on any slide that animates, so the closing epoch is not
+//     spent on the press that moves on -- see where `held` is computed below --
+//     except on a slide that hands over: one whose last picture is the very
+//     picture the next slide opens with. That slide's closing epoch *is* the press
+//     that moves on, the next slide is cut to rather than panned to, and nothing
+//     is held, since a held page and the next slide's first would be the same
+//     picture twice. The show sees this for itself by looking one slide ahead;
+//   * no page shown twice within a slide either: slideshow puts a page at the
+//     start of every play, so a still followed by an animation that starts on it
+//     would be two identical pages and a dead press. See `without_double_stills`.
+//
+// Two changes from the talk's copy, both because this one is a library: what it
+// installs -- slideshow's own page numbers, off -- is installed on first use
+// rather than on import, and a slide may arrive as a pict handle, which is what
+// `slide_canvas` hands back.
+import:
+  slideshow open
+  draw
+  lib("slideshow/main.rkt") as ss
+  lib("glide-pptx/runtime.rhm") as glide
+
+export:
+  staged_slide
+  do_staged_slide           // the function behind the macro, for a show that loops
+  transition_in             // the arrival a pict names for itself; see below
+  arrive                    // what a transition ends with; see below
+  arriving_page
+  dead_beats                // advances that change nothing; see below
+  set_start_from
+  set_transitions
+  set_slide_numbers
+  set_pan_extent
+  set_debug_epochs
+  set_reveal
+  set_reveal_extent
+
+def _slide_no = Array(0)
+def _start_from = Array(1)
+def _current = Array(0)   // logical number of the slide currently being assembled
+// How the next slide arrives when a slide does not say. A cut, which is what a
+// deck does: PowerPoint advances to the next slide and there it is. A talk that
+// wants the pages to move says so -- `set_transitions(#true)` for the downward
+// pan, or `set_transitions(#'left)` for a particular direction.
+def _default_transition = Array(#'none)
+def _emitted = Array(#false)   // has any slide been emitted yet?
+
+// The number to start counting from, which is what was passed to `--skip` plus
+// one: skipping does not renumber the slides that are left.
+fun set_start_from(n :: Int): _start_from[0] := n
+
+// The transition every slide gets unless it names its own: #f or `#'none` for
+// a cut, #t for the downward pan, or a direction. A slide's own `~transition:`
+// always wins over this.
+fun set_transitions(on):
+  _default_transition[0] := (if on is_a Symbol
+                             | on
+                             | (if on | #'down | #'none))
+
+// Print each slide's epoch count (= advances it costs) as it is built.
+def _debug_epochs = Array(#false)
+fun set_debug_epochs(on): _debug_epochs[0] := on
+
+// A slide arrives as a `Pict` from hand-written code and as a pict handle from
+// `slide_canvas`.
+fun as_pict(s) :: Pict:
+  if s is_a Pict | s | Pict.from_handle(s)
+
+// Does this pict draw anything at all? Used by the debug report to spot slides
+// whose first frame is empty, where the reveal fade shows only the title.
+fun has_ink(p :: Pict) :: Boolean:
+  def w = math.max(1, math.exact(math.ceiling(p.width)))
+  def h = math.max(1, math.exact(math.ceiling(p.height)))
+  def bm = draw.Bitmap([w, h])
+  p.draw(bm.make_dc())
+  def px = bm.argb_pixels()
+  recur go(i = 0):
+    cond
+    | i >= px.length(): #false
+    | px[i] > 0: #true
+    | ~else: go(i + 4)
+
+// The pixels a slide comes to rest on at the end of epoch `i`.
+fun frame_pixels(p :: Pict, i :: Int, n :: Real) :: Bytes:
+  def q = p.snapshot(i, n)
+  def w = math.max(1, math.exact(math.ceiling(q.width)))
+  def h = math.max(1, math.exact(math.ceiling(q.height)))
+  def bm = draw.Bitmap([w, h])
+  q.draw(bm.make_dc())
+  bm.argb_pixels()
+
+fun rest_pixels(p :: Pict, i :: Int) :: Bytes: frame_pixels(p, i, 1.0)
+
+// A quarter in, not half way: `small_steps` wiggles its target through a whole
+// sine cycle, so a wiggle epoch is back at rest at its own midpoint and only a
+// quarter-way sample tells it apart from an epoch that never moves.
+fun early_pixels(p :: Pict, i :: Int) :: Bytes: frame_pixels(p, i, 0.25)
+
+// Two frames that look the same on screen. Byte equality is too strict: a pict
+// that reaches the screen through an `alpha(1.0)` layer, or through the wrapper
+// `sustain` puts around it, is composited rather than drawn straight, and channel
+// values all over the frame come out a shade off.
+//
+// So the two thresholds do different jobs. The per-pixel one absorbs that
+// everywhere-but-tiny difference; the budget stays small, because what it has to
+// notice is a *small* thing that really moved -- a short redex rotating a few
+// degrees under `wiggle` touches only a few hundred pixels, and a budget scaled to
+// the frame would swallow it.
+//
+// Every eighth pixel, by its colour. A pixel is four bytes, alpha first, so a
+// stride that is a multiple of four lands on the same channel every time -- and
+// on alpha, which a slide with a background has at 255 everywhere, two frames
+// with nothing in common come out the same. The colour bytes are the ones that
+// tell them apart.
+fun looks_same(a :: Bytes, b :: Bytes) :: Boolean:
+  a.length() == b.length()
+    && block:
+         def n = a.length()
+         fun off(i :: Int) :: Boolean:
+           math.abs(a[i + 1] - b[i + 1]) > 8
+             || math.abs(a[i + 2] - b[i + 2]) > 8
+             || math.abs(a[i + 3] - b[i + 3]) > 8
+         recur go(i = 0, bad = 0):
+           cond
+           | i + 3 >= n: #true
+           | bad > 24: #false
+           | ~else: go(i + 32, if off(i) | bad + 1 | bad)
+
+// Advances that change nothing: an epoch is dead when it comes to rest looking
+// like the epoch before it AND never moves on the way -- so one press of the
+// clicker does no work at all. Epoch counts alone can't tell you which press is
+// the dead one, and reading the frames back is the only way to be sure: a beat
+// can differ in structure and still look identical.
+//
+// The early sample is what keeps `small_steps` honest here: every step it takes
+// is a wiggle epoch followed by a morph epoch, and a wiggle ends exactly where it
+// began -- so comparing rests alone would flag every step in the talk.
+//
+// A slide that ends in `.sustain()` always reports its last epoch, since that is
+// what sustaining is: one more advance holding the same frame.
+fun dead_beats(p) :: List:
+  def q :~ Pict = as_pict(p)
+  recur go(i = 1, prev :~ Bytes = rest_pixels(q, 0), acc :~ List = []):
+    if i >= q.duration
+    | acc
+    | def cur = rest_pixels(q, i)
+      def still = looks_same(cur, prev) && looks_same(early_pixels(q, i), prev)
+      go(i + 1, cur, if still | acc ++ [i] | acc)
+
+fun force(make): if make is_a Function | make() | make
+
+// Fading each slide up from blank: one epoch drawing a snapshot of the slide's
+// own first frame at rising alpha, then the content. It costs an advance per
+// slide, and -- because that first frame is drawn over nothing -- it means
+// leaving a slide blanks the screen before the next one appears. That is a
+// choice a talk makes, not the way a deck behaves, so it is off unless asked
+// for: a converted deck cuts from slide to slide the way it did in PowerPoint.
+def _reveal = Array(#false)
+def _reveal_extent = Array(0.4)
+fun set_reveal(on): _reveal[0] := on
+fun set_reveal_extent(e :: Real): _reveal_extent[0] := e
+
+fun reveal_first(p :: Pict) :: Pict:
+  def first = p.snapshot(0, 0)
+  def fade = animate(~extent: _reveal_extent[0], fun (n): first.alpha(n))
+  // A slide whose own first beat is a still repeats the picture the fade just
+  // landed on, so that press shows nothing. Splice it away instead of spending a
+  // press on it. A slide that starts by animating keeps its own beat.
+  if p.epoch_extent(0) == 0
+  | switch(fade, p, ~join: #'splice)
+  | switch(fade, p)
+
+// Pan from the previous slide to the next: the old page slides off one edge as
+// the new one comes in from the other.
+def _pan_extent = Array(0.5)
+fun set_pan_extent(e :: Real): _pan_extent[0] := e
+
+fun pan_offset(dir, w :: Real, h :: Real):
+  match dir
+  | #'right: values(w, 0.0)
+  | #'left: values(-w, 0.0)
+  | #'down: values(0.0, h)
+  | #'up: values(0.0, -h)
+
+// What every transition ends with: the lead put before the slide's own timeline,
+// which is what `~lead_in:` then plays on the press that lands on the slide.
+//
+// A slide may already have an arrival of its own -- an opening picture that draws
+// itself is one -- and it lives in the same place, epoch -1. `switch` carries only
+// epochs 0 and up, so padding a lead in front of such a slide does not stack the
+// two: it drops the slide's own arrival on the floor, silently, and the slide
+// simply stops animating itself in. So when there is one, the two are played in
+// turn within the one epoch instead: the page arrives, and then it draws itself.
+fun arrive(lead :: Pict, next :: Pict) :~ values(Pict, Boolean):
+  def own = next.epoch_extent(-1)
+  cond
+  | own == 0: values(switch(lead, next).time_pad(~before: -1), #true)
+  | ~else:
+      def le = lead.epoch_extent(0)
+      def total = le + own
+      def both:
+        animate(~extent: total, ~bend: fun (x :: Real): x,
+                fun (n):
+                  def s = n * total
+                  if s <= le
+                  | lead.snapshot(0, (if le == 0 | 0.0 | s / le))
+                  | next.snapshot(-1, math.min(1.0, (s - le) / own)))
+      values(switch(both, next).time_pad(~before: -1), #true)
+
+// The page a transition brings on. A slide that draws itself in should be panned
+// on *before* it has drawn anything, not after: its arrival is what fills it in,
+// and bringing the finished picture in and then drawing it again would be the
+// same picture twice.
+fun arriving_page(next :: Pict) :~ StaticPict:
+  if next.epoch_extent(-1) == 0
+  | next.snapshot(0, 0)
+  | next.snapshot(-1, 0)
+
+fun pan_transition(dir):
+  fun (prev :: StaticPict, next :: Pict, data :: Map):
+    def page = arriving_page(next)
+    def w = math.max(prev.width, page.width)
+    def h = math.max(prev.height, page.height)
+    def (dx, dy) = pan_offset(dir, w, h)
+    def frame = blank(~width: w, ~height: h)
+    def lead:
+      animate(~extent: _pan_extent[0],
+              fun (n):
+                overlay(~horiz: #'left, ~vert: #'top,
+                        frame,
+                        prev.translate(-n * dx, -n * dy),
+                        page.translate((1.0 - n) * dx, (1.0 - n) * dy))
+                  .refocus(frame))
+    arrive(lead, next)
+
+// The slide's logical number -- the one `--skip` wants -- drawn small in the
+// bottom-right. Off unless asked for: it is ink on a deck that did not ask for
+// it, and a deck is meant to look the way it looked. Rehearsing is what it is
+// for, and rehearsing is when you turn it on.
+def _installed = Array(#false)
+
+// Kept here as the name a talk already calls, and answered by the runtime: the
+// number has to be on the slide itself rather than added while the slide is
+// assembled, so that the deck the exporter writes carries it too.
+fun set_slide_numbers(on = #true): glide.set_slide_numbers(on)
+
+// Slideshow draws its own page number at the corner, and a converted deck
+// draws the number it counts by itself -- see `set_slide_numbers` -- so
+// slideshow's is turned off rather than shown alongside.
+//
+// On first use rather than on import: this is a library, and importing it to
+// call `dead_beats` on a pict should not change how a program's own slides look.
+fun hide_page_numbers():
+  when !_installed[0]
+  | _installed[0] := #true
+    ss.#{set-page-numbers-visible!}(#false)
+
+// The arrival a pict names for itself: `#'transition` in its first epoch's
+// metadata, or `#false`. Epoch metadata survives combination, so a slide wrapped
+// in a header or a stage still says what the slide inside it said. A pict handle
+// or a list of picts names nothing.
+fun transition_in(p) :: maybe(Symbol):
+  cond
+  | p is_a Pict:
+      def m = (p :~ Pict).epoch_metadata(0)
+      if m.has_key(#'transition) | m[#'transition] | #false
+  | ~else: #false
+
+// `~transition` names where the next slide comes from: `#'down` (the default)
+// means the old page leaves upwards and this one follows it in.
+// The pict as slideshow will page it, with no page shown twice. Slideshow puts a
+// page at the start of every play, so a still epoch followed by an animation that
+// starts on that still is the same picture twice, and the press between them does
+// nothing. Each such still is spliced into the animation after it, and the
+// animation's own first page then stands for the still. Only epochs 0 and up are
+// rebuilt, from what each looks like, so a pict that carries its own arrival in
+// epoch -1 is left as it is.
+fun without_double_stills(p :: Pict) :: Pict:
+  def n = p.duration
+  fun piece(i :: Int) :: Pict:
+    def e = p.epoch_extent(i)
+    if e == 0
+    | p.snapshot(i, 0)
+    | animate(~extent: e, ~bend: fun (x :: Real): x, fun (t): p.snapshot(i, t))
+  cond
+  | n < 2 || p.epoch_extent(-1) != 0: p
+  | ~else:
+      recur go(i = 1, acc :: Pict = piece(0)):
+        if i >= n
+        | acc
+        | def twice:
+            p.epoch_extent(i - 1) == 0 && p.epoch_extent(i) > 0
+              && looks_same(rest_pixels(p, i - 1), frame_pixels(p, i, 0.0))
+          go(i + 1, switch(acc, piece(i), ~join: if twice | #'splice | #'step))
+
+// Whether one slide hands over to the next: the picture it comes to rest on is
+// the picture the next one opens with.
+fun hands_over(from :: Pict, to) :: Boolean:
+  to is_a Pict
+    && looks_same(rest_pixels(from, from.duration - 1), frame_pixels(to :~ Pict, 0, 0.0))
+
+// set by the slide before, when it hands over: the next slide is cut to
+def _cut_in = Array(#false)
+
+// `~next` is the slide after this one, unbuilt, for looking ahead: it is built
+// here only if this slide is shown, and the show keeps what was built.
+fun do_staged_slide(make, ~title: ttl = #false, ~transition: tr = #false,
+                    ~reveal: rv = #true, ~next: next_make = #false, ~& kws):
+  hide_page_numbers()
+  _slide_no[0] := _slide_no[0] + 1
+  when _slide_no[0] >= _start_from[0]
+  | _current[0] := _slide_no[0]
+    def content = force(make)
+    // What this slide asked for -- through `~transition:`, or for itself in its
+    // metadata -- or what the talk asked for. Skipped on the first slide, because
+    // a transition needs a previous page, and on `#'none`, which is a cut -- and
+    // suits a predecessor that animates itself out. A slide the one before it
+    // hands over to is cut to whatever it asked for: a pan would carry a picture
+    // away and bring the same picture back.
+    def arrival:
+      if _cut_in[0] | #'none | (tr || transition_in(content) || _default_transition[0])
+    _cut_in[0] := #false
+    when _emitted[0] && arrival != #'none
+    | slide_transition(pan_transition(arrival))
+    _emitted[0] := #true
+    // Its own title, or its number. Every epoch of one animated slide is one
+    // page under one of these, so `s` steps a whole slide at a time rather than
+    // an animation frame at a time -- and with every slide sharing the one
+    // title `#false`, which is what they had, both keys ran to the end of the
+    // talk.
+    //
+    // The number goes in as a *name* and not as a title. `~name:` without
+    // `~title:` is slideshow's own way of saying "for navigating by, never
+    // drawn": it makes the page a `name-only`, which is laid out exactly as a
+    // page with no title is. Passed as a title it would be drawn -- swallowing
+    // it with a slide assembler of our own worked, until anything else wanted
+    // the assembler -- and a page given a title also gives up the room a title
+    // would take, which is room a converted deck is already using.
+    //
+    // A slide that asks for a title gets one, drawn where slideshow draws it.
+    def named = ttl || ("slide " +& _current[0])
+    // A canvas arrives as a pict handle -- which is what `slide_canvas` hands
+    // back -- and `slide` takes a `Pict`. Converted on every path, not only on
+    // the one that reveals: a handle went straight through and `slide` refused
+    // it, which is the one shape this is documented to accept.
+    def shown:
+      cond
+      | content is_a List: content
+      | _reveal[0] && rv: reveal_first(without_double_stills(as_pict(content)))
+      | ~else: without_double_stills(as_pict(content))
+    // does this slide end on the picture the next one opens with?
+    def handing_over:
+      shown is_a Pict && next_make && hands_over(shown, force(next_make))
+    when handing_over
+    | _cut_in[0] := #true
+    when _debug_epochs[0]
+    | block:
+        // A slide given as a list of picts is slideshow's own layout, not one
+        // page, and there is nothing to measure epochs on.
+        def measured = (if content is_a List | #false | as_pict(content))
+        def shown_dead = (if shown is_a Pict | dead_beats(shown) | [])
+        println("slide " +& _current[0] +& " [" +& (ttl || "-") +& "] epochs: "
+                  +& (if measured | (measured :~ Pict).duration | "n/a")
+                  +& (if shown is_a Pict | " -> " +& (shown :~ Pict).duration | "")
+                  +& (if measured
+                      | block:
+                          def c :~ Pict = measured
+                          // on what is *shown*, too: the reveal fades in the
+                          // first frame, so a static first epoch repeats it --
+                          // a dead press that never shows up when only
+                          // `content` is measured
+                          def e0 = !has_ink(c.snapshot(0, 0))
+                          def e0_end = !has_ink(c.snapshot(0, 1.0))
+                          def dead = dead_beats(c)
+                          (if e0 | "  EMPTY-first-frame" | "")
+                            +& (if e0_end | "  EMPTY-epoch0" | "")
+                            +& (if dead == [] | "" | "  DEAD-BEATS " +& dead)
+                            +& (if shown_dead == [] | "" | "  SHOWN-DEAD " +& shown_dead)
+                            +& (if handing_over | "  HANDS-OVER" | "")
+                      | ""))
+    // A slide's final epoch plays as the *outgoing* transition -- the press
+    // that runs it is the same press that moves on -- so whatever that epoch
+    // adds is never seen at rest. Sustaining gives the transition a duplicate
+    // frame to consume instead, which is why the extra press is not wasted even
+    // though `dead_beats` reports it as one. A slide that does not animate has
+    // no closing frame to lose, so it is left alone rather than spending a
+    // press on a frame nobody needs.
+    // held when the closing epoch animates -- whatever the count of epochs, since a
+    // slide that opens on a still and then writes is one epoch once the still is
+    // spliced in, and still needs its rest -- and not when it hands over
+    fun closes_moving(p :: Pict) :: Boolean: p.epoch_extent(p.duration - 1) > 0
+    def held:
+      if shown is_a Pict && closes_moving(shown) && !handing_over
+      | (shown :~ Pict).sustain()
+      | shown
+    // A pict padded to start before epoch 0 carries an arrival -- `pan_transition`
+    // hands one back, and so does a slide whose opening picture draws itself.
+    // Slideshow plays epoch -1 on the press that lands on the slide, skipping both
+    // ends, so it costs no waiting frame of its own; `~lead_in:` is how that is
+    // asked for, and asking the pict is how we know to ask.
+    def lead_in = held is_a Pict && (held :~ Pict).epoch_extent(-1) != 0
+    cond
+    | ttl && held is_a List: slide(& held, ~title: named, ~& kws)
+    | ttl: slide(held, ~title: named, ~lead_in: lead_in, ~& kws)
+    | held is_a List: slide(& held, ~name: named, ~& kws)
+    | ~else: slide(held, ~name: named, ~lead_in: lead_in, ~& kws)
+
+expr.macro 'staged_slide:
+              $(group_option_sequence
+                | '~title: $(ttl :: Block)':
+                    default ttl = ': #false'
+                | '~transition: $(tr :: Block)':
+                    default tr = ': #false'
+                | '~reveal: $(rv :: Block)':
+                    default rv = ': #true')
+              $body
+              ... ~nonempty':
+  'do_staged_slide(fun (): $body; ..., ~title $ttl, ~transition $tr, ~reveal $rv)'

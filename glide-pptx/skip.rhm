@@ -1,0 +1,37 @@
+#lang rhombus
+// `--skip N` on a talk's command line: start the show N slides in, without
+// building the N that are skipped.
+//
+// It has to be read *before* slideshow sees the command line, and slideshow reads
+// it the moment it is instantiated -- so this cannot wait for `show_slides`. It
+// runs when `runtime.rhm` is instantiated instead, which is the first thing a
+// glide program imports and which does not import slideshow: the flag and its
+// count are taken out of the arguments, and everything else is left for
+// slideshow's own parser. `show_slides` then reads `skip_count`.
+import:
+  lib("racket/base.rkt") as rkt
+
+export:
+  skip_count
+
+def _skip = Array(0)
+
+block:
+  def orig :~ List = List(& rkt.#{current-command-line-arguments}())
+  def kept:
+    recur scan(i = 0, acc :~ List = []) :~ List:
+      cond
+      | i >= orig.length(): acc
+      | orig[i] == "--skip":
+          def v = if i + 1 < orig.length() | String.maybe_to_number(orig[i + 1]) | #false
+          unless (v is_a Int) && v >= 0
+          | error(~who: "--skip",
+                  "expected a number of slides",
+                  error.val(~label: "given", if i + 1 < orig.length() | orig[i + 1] | "nothing"))
+          _skip[0] := v
+          scan(i + 2, acc)
+      | ~else: scan(i + 1, acc ++ [orig[i]])
+  rkt.#{current-command-line-arguments}(Array(& kept))
+
+// How many slides `--skip` asked to pass over, or 0.
+fun skip_count() :: Int: _skip[0]

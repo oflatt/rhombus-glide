@@ -34,3 +34,23 @@ glide {}:
 - Drag a pict from a tab on the left onto a slide to add it.
 - Click `+` in a tab to add a new slide.
 - Press `ctrl+s` to write your edits back to the source file.
+
+## glide-pptx
+
+`glide-pptx/` is a second front end for the same idea: instead of a GUI of our
+own, it uses **PowerPoint or Keynote** as the direct-manipulation editor.
+
+```
+$ raco glide-pptx translate -o out talk.pptx   # deck  -> Rhombus or Racket program
+$ raco glide-pptx export out/talk.rhm          # program -> deck
+$ raco glide-pptx watch out/talk.rhm --app keynote
+```
+
+Saving the program regenerates the deck and reopens it; saving the deck merges
+the geometry back into the program's source, changing only the literals that
+moved. A program can be split across locally imported `.rhm` files: Glide
+watches the import tree and writes an editor change back to the module that owns
+the source-located `at` form. A `glide_slides` declaration records which source
+slide sits behind presentation-only wrappers such as `in_section(...)`, so
+splitting the running order does not require boilerplate wrapper functions. See
+`glide-pptx/README.md`.

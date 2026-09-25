@@ -1,0 +1,110 @@
+#lang rhombus/and_meta
+// Showing a converted deck as a slideshow.
+//
+// A slide here is a finished page, not content to be laid out: it carries its
+// own background and its elements are placed against the deck's own geometry.
+// slideshow puts content inside the client area, so a slide scaled to fit the
+// client leaves the page's margins showing as a border -- which reads as a small
+// slide with white edges. Scaling to the whole page and padding the margin back
+// off puts it where it belongs.
+//
+// This is a module of its own because importing slideshow starts the GUI, and
+// translating, exporting and syncing a deck all have to work with no display.
+
+import:
+  // before slideshow, so that `--skip N` is gone by the time it reads the line
+  lib("glide-pptx/skip.rhm").skip_count
+  slideshow open
+  lib("slideshow/main.rkt") as ss
+  lib("glide-pptx/runtime.rhm") as glide
+  lib("glide-pptx/runtime.rkt") as rkt
+  // Opened, not prefixed, so that `export` below can pass the knobs on:
+  // a program that shows its deck with `show_slides` sets them without
+  // having to know that `staged.rhm` is where they live.
+  lib("glide-pptx/staged.rhm") open
+
+export:
+  show_slides
+  // The knobs a talk reaches for, so that a program which shows its deck with
+  // `show_slides` can set them without importing `staged.rhm` itself.
+  all_from(lib("glide-pptx/staged.rhm"))
+
+// A slide is shown through `staged_slide`: numbered, revealed, and arrived at.
+// See `staged.rhm`. A slide may be
+//
+//   * a canvas, which is a pict handle;
+//   * a `Pict`, which is what a slide becomes once it animates -- a converted
+//     deck is meant to be rewritten by hand, and the first thing anyone does by
+//     hand is give a slide stages;
+//   * a function of no arguments returning either, which is a slide that is not
+//     built until it is shown.
+//
+// The third is what makes `set_start_from` worth having. A slide is handed to
+// `staged_slide` unbuilt, and `staged_slide` calls it only if it is going to
+// show it -- so starting at slide twenty costs nothing for the nineteen before
+// it. In one real talk that is six seconds of the nine it takes to start.
+//
+// `~hidden:` is read off the canvas, which means building it; a slide written
+// as a function is therefore always shown. A program that wants a slide left
+// out of a lazy deck leaves it out of the list.
+fun show_slides(slides, ~width: w :: Real, ~height: h :: Real):
+  // `racket talk.rhm --skip N` starts N slides in, and the N are never built
+  when skip_count() > 0
+  | set_start_from(skip_count() + 1)
+  def page = blank_client()
+  def m = ss.margin
+  // The page, not the client area.
+  def page_w = page.width + 2 * m
+  def page_h = page.height + 2 * m
+  // A deck's aspect ratio and slideshow's are close but not equal, so the slide
+  // fits rather than being cropped.
+  def zoom = math.min(page_w / w, page_h / h)
+  fun lazy_slide(s): s is_a Function.of_arity(0)
+  // The number in the corner, the one `--skip` counts by, composed onto the
+  // slide rather than added while the slide is assembled -- so the deck the
+  // exporter writes carries the same number, in the same corner, at the same
+  // fraction of the slide. Before the scale, so it scales with the slide, and
+  // with `overlay` rather than a Racket `pin-over`, which would flatten a slide
+  // that animates.
+  fun numbered(p :~ Pict, n) :~ Pict:
+    def plain :~ Pict = bold("" +& n).colorize("black")
+    def wanted = math.max(8.0, 0.032 * p.height)
+    def tag :~ Pict = plain.scale(wanted / math.max(1.0, plain.height))
+    overlay(~horiz: #'right, ~vert: #'bottom,
+            p, tag.pad(~right: 0.006 * p.width, ~bottom: 0.006 * p.height))
+  fun fit(v, n) :~ Pict:
+    def p :: Pict = if v is_a Pict | v | Pict.from_handle(v)
+    def shown = if glide.slide_numbers() | numbered(p, n) | p
+    shown.scale(zoom).pad(-m)
+  // Numbered by position in the whole list, which is what the exporter counts
+  // by: a hidden slide is written to the deck and skipped by the show, and a
+  // number that counted differently would be a number that disagreed. Counted
+  // with the list rather than looked up by slide, because a talk may show the
+  // same slide twice and the two are not one slide.
+  //
+  // A slide written as a function is not asked whether it is hidden -- asking
+  // would build it, which is the one thing being lazy is for -- so it is shown.
+  fun skipped(s): !lazy_slide(s) && rkt.#{canvas-hidden?}(s)
+  // the slides the show includes, each with its number
+  def shown:
+    for List (s in slides, n in 1..):
+      keep_when !skipped(s)
+      [s, n]
+  // Each slide is built once, and the show looks one slide ahead -- to see whether
+  // a slide hands over to the next -- so the one built ahead is kept for its turn.
+  def ahead = Array(#false)
+  fun content_of(i :: Int):
+    def kept = ahead[0]
+    if kept && (kept :~ List)[0] == i
+    | (kept :~ List)[1]
+    | block:
+        def [s, n] = shown[i]
+        def c = fit(if lazy_slide(s) | s() | s, n)
+        ahead[0] := [i, c]
+        c
+  for (i in 0..shown.length()):
+    def [s, n] = shown[i]
+    def next = if i + 1 < shown.length() | fun (): content_of(i + 1) | #false
+    do_staged_slide(fun (): content_of(i),
+                    ~transition: if lazy_slide(s) | #false | glide.transition_of(s),
+                    ~layout: #'center, ~next: next)

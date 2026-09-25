@@ -1,0 +1,399 @@
+#lang rhombus/and_meta
+// Rhombus spelling for the drawing runtime.
+//
+// The runtime itself is Racket, so a fidelity fix lands in the Racket and the
+// Rhombus output at the same time. This module only renames: the wrappers exist
+// because Racket keywords like `#:bold?` and `#:flip-h?` have no direct
+// Rhombus spelling, and generated code should not have to escape them.
+
+import:
+  // First, and before anything that reaches slideshow: it takes `--skip N` off
+  // the command line, which slideshow would otherwise refuse. See `skip.rhm`.
+  lib("glide-pptx/skip.rhm")
+  lib("glide-pptx/runtime.rkt") as rt
+  lib("glide-pptx/export.rkt") as ex
+  lib("glide-pptx/fonts.rkt") as ft
+  lib("pict/main.rkt") as pict_rkt
+  // Prefixed, not `open`: this module exports `blank` of its own.
+  pict as pc
+
+export:
+  glide_slides
+  slide_canvas
+  from_stage
+  over
+  tag
+  at
+  shape_pict
+  textbox
+  image_pict
+  group_pict
+  table_pict
+  body
+  para
+  run
+  hex
+  solid_fill
+  gradient_fill
+  image_fill
+  pattern_fill
+  make_stroke
+  make_shadow
+  line_end
+  rgba
+  rgb
+  black
+  white
+  insets
+  default_insets
+  bullet
+  no_bullet
+  preset_geom
+  custom_geom
+  tbl_cell
+  current_default_font
+  pair
+  deck_to_pdf
+  shown_slides
+  set_slide_numbers
+  slide_numbers
+  transition_of
+  register_fonts
+  check_fonts
+  picts_to_pptx
+  pict_to_png
+  media_lookup
+  current_media_base
+  pict_width
+  pict_height
+  blank
+  vstack
+  hstack
+
+// A deck remains an ordinary `List` for user code, while this declaration also
+// records a private manifest, which records the source slide behind each
+// show-time wrapper. Only these three entry shapes are accepted, so a deck that
+// cannot be traced back to source is rejected when it is compiled instead of
+// after an editor change:
+//
+//   glide_slides all_slides:
+//     [slide_1,
+//      divider(0),
+//      in_section(0, slide_2)]
+//
+// `in_section` uses the identifier after the section as the source owner --
+// keyword arguments may follow it -- while `divider` is a generated page with no
+// source canvas. `show_as` and `show_only` are the
+// corresponding escape hatches for other decorators and generated pages; they
+// are marker forms understood only here and do not enter the user program as
+// functions.
+expr.macro
+| 'glide_slide_entry($(('in_section($section, $(owner :: Identifier))' && shown)))':
+    'rt.#{make-slide-spec}(#'$owner, $owner, $shown)'
+// the same, with whatever keywords the deck's `in_section` takes after the slide
+| 'glide_slide_entry($(('in_section($section, $(owner :: Identifier), $kw_arg, ...)' && shown)))':
+    'rt.#{make-slide-spec}(#'$owner, $owner, $shown)'
+| 'glide_slide_entry($(('divider($arg, ...)' && shown)))':
+    'rt.#{make-slide-spec}(#false, #false, $shown)'
+| 'glide_slide_entry(show_as($(owner :: Identifier), $shown))':
+    'rt.#{make-slide-spec}(#'$owner, $owner, $shown)'
+| 'glide_slide_entry(show_only($shown))':
+    'rt.#{make-slide-spec}(#false, #false, $shown)'
+| 'glide_slide_entry($(owner :: Identifier))':
+    'rt.#{make-slide-spec}(#'$owner, $owner, $owner)'
+| 'glide_slide_entry($bad)':
+    syntax_meta.error(
+      "glide_slides: expected a slide name, in_section(section, slide), divider(section), show_as(slide, shown), or show_only(shown)",
+      bad)
+
+defn.macro 'glide_slides $name:
+              [$entry, ...]':
+  '«def glide_slide_manifest:
+       [glide_slide_entry($entry), ...]
+    def $name:
+      rt.#{register-slide-manifest}(
+        glide_slide_manifest,
+        for List (entry in glide_slide_manifest):
+          rt.#{slide-spec-shown}(entry))»'
+
+// A Rhombus list is not a Racket list, so anything crossing into the Racket
+// runtime as a list argument is converted here. Generated code can then use
+// plain `[...]` literals throughout.
+
+fun to_rkt_list(v):
+  match v
+  | l :: List: PairList[& l]
+  | ~else: v
+
+fun to_rkt_list_of_lists(v):
+  match v
+  | l :: List: PairList[& l.map(to_rkt_list)]
+  | ~else: v
+
+// ---------------------------------------------------------------- composition
+
+// The slides a show actually shows: a slide the editor was told to skip stays
+// in the deck and is passed over here.
+// Whether each slide carries its own number in the corner. Set at the top level
+// of a talk rather than inside `module main`, because it is read on the way to
+// the deck as well as on the way to the screen: the number used to be drawn by
+// the slide assembler, which nothing but the show goes through, so the deck
+// came out with the corner empty.
+fun set_slide_numbers(on = #true): rt.#{set-slide-numbers!}(on)
+fun slide_numbers(): rt.#{slide-numbers-on?}()
+
+fun shown_slides(slides):
+  rt.#{shown-picts}(to_rkt_list(slides))
+
+fun slide_canvas(~width: w, ~height: h, ~background: bg = rt.#{white},
+                 ~hidden: hidden = #false, ~build: build = #false,
+                 ~transition: transition = #false, & elems):
+  rt.#{slide-canvas}(~width: w, ~height: h, ~background: bg, ~#{hidden?}: hidden,
+                     ~build: build, ~transition: transition, & elems)
+
+// The fonts a deck asks for.
+//
+// `register_fonts` loads every font file in a folder beside the program, so a
+// deck can carry the faces it is set in rather than hope for them. It has to
+// run before anything is drawn or measured -- the drawing library builds its
+// font map once -- which is why a generated program calls it at the top.
+//
+// `check_fonts` refuses to run on substitutes. Each entry is a family, or a
+// family and the stand-in it will accept: `["Helvetica Neue", "Nimbus Sans"]`
+// says that a metric-compatible clone will do, and checks that the name really
+// does resolve to it rather than to whatever the machine had to hand.
+// Quiet: a program's own output is its slides, and a top-level expression's
+// value is printed. The count is the Racket side's to return; here it is not
+// news, and a number on the terminal every time a talk starts is noise.
+fun register_fonts(dir):
+  ft.#{register-fonts!}(dir)
+  #void
+fun check_fonts(& spec): ft.#{check-fonts!}(to_rkt_spec(spec))
+
+// A Rhombus list of lists, as the Racket side wants it.
+fun to_rkt_spec(spec):
+  to_rkt_list(for List (e in spec): to_rkt_list(e))
+
+// How the show moves to this slide, when the slide said. `staged.rhm` performs
+// it; nothing is drawn differently for it here.
+fun transition_of(s):
+  rt.#{canvas-transition}(s)
+
+// A deck needs an identifier that connects an editor object back to this call,
+// but the program should not have to carry that bookkeeping. The macro captures
+// the call site's source location and the Racket runtime turns it into an opaque
+// alt-text tag. An explicit `~tag:` still wins when one source site intentionally
+// draws a named family of elements.
+fun at_impl(x, y, p, ~rotate: rot = 0.0, ~tag: tag = #false, ~name: name = #false,
+            ~nudge: nudge = #false, ~source_location: source_location = #false):
+  rt.#{at}(x, y, p, ~rotate: rot, ~tag: tag, ~name: name,
+           ~nudge: to_rkt_list(nudge),
+           ~#{source-location}: source_location)
+
+expr.macro 'at($arg, ...)':
+  ~op_stx: who
+  'at_impl($arg, ..., ~source_location: $(who.srcloc()))'
+
+// What to call what this pict draws, wherever it ends up.
+//
+// `at`'s `~tag:` names what a canvas places. This names the pict itself, which
+// is what a pict placed by something else needs -- a helper composing a picture
+// of its own, a blob laid over a slide with a `put` of the talk's own. The name
+// travels with the pict, so the element on the slide answers to it and an edit
+// to it can be found.
+fun tag(p, name :: String): rt.#{tag-pict}(p, name)
+
+// A slide with `elems` laid over it from `stage` on, counting the first stage
+// as 1. A shape drawn on the third stage of a slide in the editor appears
+// there and not before, and this is what says so: the slide's own canvas is one
+// still picture, and the staging is applied to it from outside.
+fun from_stage(stage, slide, & elems):
+  rt.#{from-stage}(stage, slide, to_rkt_list(elems))
+
+// A slide with `elems` laid over it, from the start.
+//
+// For a slide a helper builds: the canvas is inside the helper, so there is no
+// `slide_canvas(...)` here to put another `at` form in -- and the slide cannot
+// go inside a canvas either, since `at` holds a still picture and a slide that
+// animates is not one. Over it, then, which is what a talk's own helpers do to
+// a slide when they add a header to it.
+fun over(slide, & elems):
+  rt.#{from-stage}(1, slide, to_rkt_list(elems))
+
+// --------------------------------------------------------------------- leaves
+
+fun make_shadow(color, ~blur: blur = 0.0, ~distance: dist = 0.0,
+                ~direction: dir = 0.0):
+  rt.#{make-shadow}(color, ~blur: blur, ~distance: dist, ~direction: dir)
+
+fun shape_pict(~width: w, ~height: h,
+               ~shape: shape = #false, ~geom: geom = #false,
+               ~fill: fill = #false, ~line: line = #false, ~body: body = #false,
+               ~shadow: shadow = #false,
+               ~flip_h: fh = #false, ~flip_v: fv = #false):
+  rt.#{shape-pict}(~width: w, ~height: h, ~shape: shape, ~geom: geom,
+                   ~fill: fill, ~line: line, ~body: body, ~shadow: shadow,
+                   ~#{flip-h?}: fh, ~#{flip-v?}: fv)
+
+fun textbox(~width: w, ~height: h,
+            ~anchor: anchor = #'top, ~anchor_center: ac = #false,
+            ~wrap: wrap = #true, ~autofit: autofit = #'none,
+            ~insets: ins = rt.#{default-insets}, ~rotate: rot = 0.0,
+            & paras):
+  rt.#{textbox}(~width: w, ~height: h, ~anchor: anchor,
+                ~#{anchor-center?}: ac, ~#{wrap?}: wrap, ~autofit: autofit,
+                ~insets: ins, ~rotate: rot, & paras)
+
+fun image_pict(src, w, h,
+               ~crop: crop = #false, ~line: line = #false,
+               ~flip_h: fh = #false, ~flip_v: fv = #false,
+               ~opacity: opacity = 1.0, ~shadow: shadow = #false):
+  rt.#{image-pict}(src, w, h, ~crop: to_rkt_list(crop), ~line: line,
+                   ~#{flip-h?}: fh, ~#{flip-v?}: fv, ~opacity: opacity,
+                   ~shadow: shadow)
+
+fun group_pict(~width: w, ~height: h,
+               ~child_x: cx = 0.0, ~child_y: cy = 0.0,
+               ~child_width: cw = w, ~child_height: ch = h,
+               ~flip_h: fh = #false, ~flip_v: fv = #false,
+               & elems):
+  rt.#{group-pict}(~width: w, ~height: h, ~#{child-x}: cx, ~#{child-y}: cy,
+                   ~#{child-width}: cw, ~#{child-height}: ch,
+                   ~#{flip-h?}: fh, ~#{flip-v?}: fv, & elems)
+
+fun table_pict(~width: w, ~height: h, ~col_widths: cols, ~row_heights: rows,
+               ~cells: cells):
+  rt.#{table-pict}(~width: w, ~height: h,
+                   ~#{col-widths}: to_rkt_list(cols),
+                   ~#{row-heights}: to_rkt_list(rows),
+                   ~cells: to_rkt_list_of_lists(cells))
+
+// ----------------------------------------------------------------------- text
+
+fun body(~anchor: anchor = #'top, ~anchor_center: ac = #false,
+         ~wrap: wrap = #true, ~autofit: autofit = #'none,
+         ~insets: ins = rt.#{default-insets}, ~rotate: rot = 0.0,
+         & paras):
+  rt.#{body*}(~anchor: anchor, ~#{anchor-center?}: ac, ~#{wrap?}: wrap,
+              ~autofit: autofit, ~insets: ins, ~rotate: rot, & paras)
+
+fun para(~align: align = #'left, ~level: level = 0,
+         ~margin_left: marl = 0.0, ~indent: indent = 0.0,
+         ~line_spacing: ls = Pair(#'percent, 1.0),
+         ~space_before: sb = 0.0, ~space_after: sa = 0.0,
+         ~bullet: b = rt.#{no-bullet},
+         & runs):
+  rt.#{para*}(~align: align, ~level: level, ~#{margin-left}: marl,
+              ~indent: indent, ~#{line-spacing}: ls,
+              ~#{space-before}: sb, ~#{space-after}: sa, ~bullet: b, & runs)
+
+fun run(text,
+        ~font: font = rt.#{current-default-font}(),
+        ~size: size = 18.0,
+        ~bold: bold = #false, ~italic: italic = #false,
+        ~underline: underline = #false, ~strike: strike = #false,
+        ~color: color = rt.#{black}, ~spacing: spacing = 0.0,
+        ~caps: caps = #'none, ~baseline: baseline = 0.0):
+  rt.#{run*}(text, ~font: font, ~size: size,
+             ~#{bold?}: bold, ~#{italic?}: italic,
+             ~#{underline?}: underline, ~#{strike?}: strike,
+             ~color: color, ~spacing: spacing, ~caps: caps, ~baseline: baseline)
+
+// ---------------------------------------------------------------------- paint
+
+fun hex(s, ~alpha: alpha = 1.0): rt.#{hex}(s, ~alpha: alpha)
+
+fun make_stroke(color, ~width: w = 1.0, ~dash: dash = #'solid, ~cap: cap = #'flat,
+                ~head: head = #false, ~tail: tail = #false,
+                ~dash_pattern: dash_pattern = #false):
+  rt.#{make-stroke}(color, ~width: w, ~dash: dash, ~cap: cap, ~head: head, ~tail: tail,
+                    ~#{dash-pattern}: to_rkt_list(dash_pattern))
+
+// What a line is decorated with at one end: an arrow on a connector, most
+// often. `kind` is #'arrow, #'triangle, #'stealth, #'diamond or #'oval.
+fun line_end(kind, width, length):
+  rt.#{line-end}(kind, width, length)
+
+def solid_fill = rt.#{solid-fill}
+
+fun gradient_fill(stops, angle): rt.#{gradient-fill}(to_rkt_list(stops), angle)
+
+fun preset_geom(name, adjust): rt.#{preset-geom}(name, to_rkt_list(adjust))
+
+fun custom_geom(paths, w, h):
+  rt.#{custom-geom}(PairList[& paths.map(to_rkt_list_of_lists)], w, h)
+def image_fill = rt.#{image-fill}
+def pattern_fill = rt.#{pattern-fill}
+def rgba = rt.#{rgba}
+def rgb = rt.#{rgb}
+def black = rt.#{black}
+def white = rt.#{white}
+def insets = rt.#{insets}
+def default_insets = rt.#{default-insets}
+def bullet = rt.#{bullet}
+def no_bullet = rt.#{no-bullet}
+def tbl_cell = rt.#{tbl-cell}
+def current_default_font = rt.#{current-default-font}
+
+fun pair(a, b): Pair(a, b)
+
+// --------------------------------------------------------------------- output
+
+// The pages one slide is worth. A slide that animates is many frames, and a
+// backup PDF holding only the first is not a backup -- so an advance is a page,
+// which is the slides the animation was made from and the count the deck had
+// before anyone gave it stages.
+// A slide may be written as a function of no arguments -- see `show.rhm` -- so
+// that a talk starting part way through never builds what it skipped. A page
+// wants the picture, so here it is called.
+fun forced(s):
+  if s is_a Function.of_arity(0) | s() | s
+
+fun slide_pages(s0):
+  def s = forced(s0)
+  match s
+  | q :: pc.Pict:
+      // The end of each epoch is the picture that epoch's press lands on. A pict
+      // padded to start before epoch 0 has an arrival animation -- see `~lead_in:`
+      // in `staged.rhm` -- and the press that arrives lands on the end of *that*
+      // epoch, so it is a page too, and without it the backup would be missing the
+      // one picture the slide rests on.
+      def first = if q.epoch_extent(-1) == 0 | 0 | -1
+      for List (i in first .. math.max(1, q.duration)): q.snapshot(i, 1.0).handle
+  | ~else: [s]
+
+// `~hidden:` is checked here rather than left to the Racket side, because a
+// slide with stages reaches this as a `Pict` and a snapshot of one does not
+// carry what the canvas said.
+fun deck_to_pdf(picts, path, ~width: w = #false, ~height: h = #false):
+  def pages:
+    List.append(& for List (s in picts):
+                    if rt.#{canvas-hidden?}(s) | [] | slide_pages(s))
+  rt.#{deck->pdf}(to_rkt_list(pages), path, ~width: w, ~height: h)
+  // Quiet, for the same reason `register_fonts` is: a top-level expression's
+  // value is printed, and the path is not news to whoever passed it in.
+  #void
+
+fun pict_to_png(p, path, ~scale: s = 1.0): rt.#{pict->png}(p, path, ~scale: s)
+
+// Writing a .pptx lives in its own module, so it is imported where it is used.
+fun picts_to_pptx(picts, path, ~width: w = #false, ~height: h = #false):
+  ex.#{picts->pptx}(to_rkt_list(for List (s in picts): forced(s)), path,
+                    ~width: w, ~height: h)
+
+def media_lookup = rt.#{media-lookup}
+def current_media_base = rt.#{current-media-base}
+// Composition. A slide is built from `at` placements, but the pict placed at one
+// of them is often several picts stacked up. These are Racket's `vc-append` and
+// `hc-append`: rhombus/pict's `stack` and `beside` work on its own `Pict`, not
+// on these picts, and the names here stay clear of them so that a program can
+// `open` both while it is being refactored.
+fun vstack(~sep: sep = 0, & ps):
+  pict_rkt.#{vc-append}(sep, & ps)
+
+fun hstack(~sep: sep = 0, & ps):
+  pict_rkt.#{hc-append}(sep, & ps)
+
+def blank = pict_rkt.#{blank}
+def pict_width = pict_rkt.#{pict-width}
+def pict_height = pict_rkt.#{pict-height}
