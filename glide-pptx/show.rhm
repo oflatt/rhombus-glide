@@ -85,12 +85,26 @@ fun show_slides(slides, ~width: w :: Real, ~height: h :: Real):
   // A slide written as a function is not asked whether it is hidden -- asking
   // would build it, which is the one thing being lazy is for -- so it is shown.
   fun skipped(s): !lazy_slide(s) && rkt.#{canvas-hidden?}(s)
-  for values(n = 1) (s in slides):
-    cond
-    | skipped(s): n + 1
-    | ~else:
-        if lazy_slide(s)
-        | do_staged_slide(fun (): fit(s(), n), ~layout: #'center)
-        | do_staged_slide(fit(s, n), ~transition: glide.transition_of(s),
-                          ~layout: #'center)
-        n + 1
+  // the slides the show includes, each with its number
+  def shown:
+    for List (s in slides, n in 1..):
+      keep_when !skipped(s)
+      [s, n]
+  // Each slide is built once, and the show looks one slide ahead -- to see whether
+  // a slide hands over to the next -- so the one built ahead is kept for its turn.
+  def ahead = Array(#false)
+  fun content_of(i :: Int):
+    def kept = ahead[0]
+    if kept && (kept :~ List)[0] == i
+    | (kept :~ List)[1]
+    | block:
+        def [s, n] = shown[i]
+        def c = fit(if lazy_slide(s) | s() | s, n)
+        ahead[0] := [i, c]
+        c
+  for (i in 0..shown.length()):
+    def [s, n] = shown[i]
+    def next = if i + 1 < shown.length() | fun (): content_of(i + 1) | #false
+    do_staged_slide(fun (): content_of(i),
+                    ~transition: if lazy_slide(s) | #false | glide.transition_of(s),
+                    ~layout: #'center, ~next: next)
